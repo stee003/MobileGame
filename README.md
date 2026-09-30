@@ -128,6 +128,36 @@ A headless mirror of the same suite lives in
 `Tools/PlayerMovementVerification/simulate_player_movement.py`; see
 `Tools/PlayerMovementVerification/REPORT.md` for the recorded results.
 
+## Mobile touch controls (`VirtualJoystick` & `TouchCameraControl`)
+
+On-screen mobile controls live in `Assets/Scripts/UI/` and self-bootstrap onto a shared
+`MobileControlsCanvas` (`ScreenSpaceOverlay`, `ScaleWithScreenSize` 1920×1080, `matchWidthOrHeight = 0.5`,
+`GraphicRaycaster`):
+
+* **VirtualJoystick** (`Assets/Scripts/UI/VirtualJoystick.cs`, `VirtualJoystickMath.cs`,
+  `VirtualJoystickTest.cs`) — on-screen movement joystick anchored to the bottom-left corner:
+  * Multi-touch safe (`EnhancedTouch`), dead-zone filtered, smoothed, and wired into
+    `GameInput.SetMobileMove`.
+* **TouchCameraControl** (`Assets/Scripts/UI/TouchCameraControl.cs`, `TouchCameraMath.cs`,
+  `TouchCameraControlTest.cs`) — mobile touch camera control for rotating `ThirdPersonCamera`:
+  * **Touch area** — normalized screen rectangle (default right half of screen, `anchorMin = (0.5, 0)`,
+    `anchorMax = (1.0, 1.0)`), adapting automatically to every screen resolution and aspect ratio
+    in Unity's Game view (`16:9`, `18:9`, `19.5:9`, `20:9`, `21:9`, `16:10`, `4:3`, `Free Aspect`).
+  * **Touch detection & multi-touch ownership** — claims the first finger that touches down
+    (`TouchPhase.Began`) inside the camera touch area and tracks only that finger until it lifts,
+    leaving other fingers free for the movement joystick and future UI buttons.
+  * **UI touch separation** — strictly rejects touches that begin on the `VirtualJoystick` or on
+    any interactive UI element (`Button`, `Selectable`, pointer handlers, raycastable `Graphic`s, or
+    registered exclusion rects), both via `EventSystem` raycasts and direct UI inspection. Dragging
+    the movement joystick or interacting with future UI buttons never rotates the camera.
+  * **Smooth rotation** — frame-rate-independent exponential smoothing of cumulative touch
+    displacement (`smoothingSpeed = 25/s`), paired with `ThirdPersonCamera`'s critically damped
+    orbital angle smoothing.
+  * **Adjustable sensitivity & vertical limits** — overall and horizontal/vertical sensitivity
+    multipliers, optional axis inversion, canvas-scale normalization across aspect ratios, and
+    synchronized vertical pitch clamping (`-35°` to `+70°`).
+  * **Scope** — strictly mobile camera rotation only (no combat, no target lock, no abilities).
+
 ## Rendering (URP 17.0.4)
 
 Mobile-oriented pipeline assets live in `Assets/Settings` — one URP asset per quality tier, all
@@ -231,6 +261,9 @@ for Android/iOS, Android min API **24**, target API **35**, **ARM64** only.
    * The third-person camera frames the temporary capsule player at the default distance (5 m) and height (1.6 m) with zero Console errors.
    * `CameraSystemTest` runs automatically on Start (or via its **Verify: Run Camera Test Suite** context menu), reporting `VERIFICATION PASSED`.
    * `PlayerControllerTest` runs automatically on Start (or via its **Verify: Run Player Controller Test Suite** context menu), reporting `VERIFICATION PASSED` for all 14 checks.
+   * `VirtualJoystickTest` runs automatically after the player suite (or via its **Verify: Run Virtual Joystick Test Suite** context menu), reporting `VERIFICATION PASSED`.
+   * `TouchCameraControlTest` runs automatically after the joystick suite (or via its **Verify: Run Touch Camera Control Test Suite** context menu), reporting `VERIFICATION PASSED` across all checks (wiring, horizontal rotation, vertical camera limits, smooth rotation, adjustable sensitivity, movement joystick touch separation, simultaneous dual-thumb control, future UI button touch separation, and multi-aspect-ratio verification).
+   * **Mobile touch camera in Game view**: drag on the right half of the Game view to smoothly orbit the camera horizontally and vertically (clamped between `-35°` and `+70°`). Dragging the movement joystick on the left moves the player without rotating the camera. Switch the Game view aspect ratio dropdown (`16:9`, `18:9`, `19.5:9`, `20:9`, `4:3`, `Free Aspect`) to verify responsive layout and consistent sensitivity across aspect ratios.
    * **Moving around the arena**: WASD / arrow keys move the capsule around the arena, up the ramp, and onto platforms; the camera follows smoothly without jitter.
    * **Acceleration and stopping**: hold a direction and the capsule ramps up to 6 m/s in about 0.2 s; release the key and it comes to rest in about 0.13 s without sliding past the intended stop point.
    * **Facing**: the capsule turns toward the direction it is walking in at 720 deg/s.
