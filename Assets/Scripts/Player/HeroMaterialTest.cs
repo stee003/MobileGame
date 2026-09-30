@@ -631,7 +631,7 @@ namespace MobileGame.Player
             int size = Mathf.Clamp(captureSize, 64, 1024);
             var cameraObject = new GameObject("HeroMaterialTestCamera");
             cameraObject.hideFlags = HideFlags.DontSave;
-            var camera = cameraObject.AddComponent<Camera>();
+            var camera = cameraObject.AddComponent<UnityEngine.Camera>();
             var target = new RenderTexture(size, size, 24, RenderTextureFormat.ARGB32);
 
             HeroStats stats = new HeroStats();
@@ -830,7 +830,7 @@ namespace MobileGame.Player
             RenderTexture previous = RenderTexture.active;
             try
             {
-                Graphics.Blit(texture, scratch);
+                UnityEngine.Graphics.Blit(texture, scratch);
                 RenderTexture.active = scratch;
                 readable.ReadPixels(new Rect(0, 0, size, size), 0, 0, false);
                 readable.Apply(false, false);
