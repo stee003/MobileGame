@@ -1,6 +1,7 @@
 using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using MobileGame.Core;
 using MobileGame.Input;
 
 namespace MobileGame.Camera
@@ -243,8 +244,11 @@ namespace MobileGame.Camera
             Vector3 backwardDir = -(rotation * Vector3.forward);
 
             // 3. Collision avoidance
+            // The cast is only issued when it is legal: a positive radius and distance, and a
+            // unit-length direction (Unity asserts "IsNormalized(dir, 0.001f)" otherwise).
             float targetCollisionDistance = m_desiredDistance;
-            if (enableCollision)
+            if (enableCollision && collisionRadius > 0f && m_desiredDistance > 0f &&
+                PhysicsQueryGuard.IsUsableDirection(backwardDir))
             {
                 if (Physics.SphereCast(m_smoothedPivot, collisionRadius, backwardDir, out RaycastHit hit, m_desiredDistance, collisionLayers, QueryTriggerInteraction.Ignore))
                 {
@@ -293,7 +297,9 @@ namespace MobileGame.Camera
         /// </summary>
         public void ProcessLook(Vector2 lookDelta)
         {
-            if (lookDelta.sqrMagnitude < 0.0001f)
+            // Ignore non-finite input outright: it would flow into the orbit angles, from there into
+            // the rotation and finally into a degenerate direction handed to the collision cast.
+            if (!PhysicsQueryGuard.IsFinite(lookDelta) || lookDelta.sqrMagnitude < 0.0001f)
                 return;
 
             // Horizontal rotation (yaw)

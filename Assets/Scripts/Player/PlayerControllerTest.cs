@@ -94,6 +94,7 @@ namespace MobileGame.Player
 
             yield return RunTest("Static wiring & configuration", StaticChecks());
             yield return RunTest("Grounded at spawn", TestGroundedAtSpawn());
+            yield return RunTest("Idle motion integrity (no zero-length Move)", TestIdleMotionIntegrity());
             yield return RunTest("Forward movement", TestDirectionalMovement("Forward", Vector3.forward));
             yield return RunTest("Backward movement", TestDirectionalMovement("Backward", Vector3.back));
             yield return RunTest("Right movement", TestDirectionalMovement("Right", Vector3.right));
@@ -196,6 +197,94 @@ namespace MobileGame.Player
             }
 
             Debug.Log($"[PlayerTest] Grounded at spawn PASSED: resting at y={restY:F3}, grounded and stable while idle.");
+            result.Passed = true;
+            yield return result;
+        }
+
+        /// <summary>
+        /// Regression check for Unity's <c>"Assertion failed on expression: 'IsNormalized(dir, 0.001f)'"</c>.
+        ///
+        /// <para>
+        /// <see cref="CharacterController.Move"/> normalizes its motion internally, so a zero-length
+        /// motion (planar and vertical velocity both zero - the state <see cref="ResetMovementState"/>
+        /// leaves behind, which every teleport in this suite performs) asserts on <em>every</em> idle
+        /// frame. The controller must never pass a degenerate vector to the engine: either it hands
+        /// Move a usable motion or it skips the call entirely, and the console must stay clean while
+        /// an idle player stands on the ground.
+        /// </para>
+        /// </summary>
+        private IEnumerator TestIdleMotionIntegrity()
+        {
+            TestResult result = new TestResult();
+
+            int assertionCount = 0;
+            Application.LogCallback watcher = (condition, stackTrace, type) =>
+            {
+                if (!string.IsNullOrEmpty(condition) && condition.Contains("IsNormalized"))
+                {
+                    assertionCount++;
+                }
+            };
+            Application.logMessageReceived += watcher;
+
+            // Exactly what the other scenarios do before they measure: reset the movement state and
+            // drop the player on the arena floor.
+            Teleport(new Vector3(0f, 1f, 8f), 180f);
+            ReleaseInput();
+
+            long skippedBefore = player.SkippedMotionFrames;
+            long previousSkipped = skippedBefore;
+            bool degenerateMotionReachedEngine = false;
+
+            for (int frame = 0; frame < 45; frame++)
+            {
+                yield return null;
+
+                long skippedNow = player.SkippedMotionFrames;
+                bool skippedThisFrame = skippedNow > previousSkipped;
+                previousSkipped = skippedNow;
+
+                // Update() for this frame has already run: the controller either moved by a usable
+                // motion or skipped the CharacterController call. Anything else is the assertion bug.
+                if (Time.deltaTime > 0f && player.Velocity.sqrMagnitude <= 0.0000001f && !skippedThisFrame)
+                {
+                    degenerateMotionReachedEngine = true;
+                    break;
+                }
+            }
+
+            Application.logMessageReceived -= watcher;
+
+            if (degenerateMotionReachedEngine)
+            {
+                Debug.LogError("[PlayerTest] Idle motion FAILED: a zero-length motion was handed to CharacterController.Move while idle; Unity asserts 'IsNormalized(dir, 0.001f)' on it.");
+                yield return result;
+            }
+
+            if (assertionCount > 0)
+            {
+                Debug.LogError($"[PlayerTest] Idle motion FAILED: Unity logged {assertionCount} IsNormalized assertion(s) during the idle window.");
+                yield return result;
+            }
+
+            if (!player.IsGrounded)
+            {
+                Debug.LogError($"[PlayerTest] Idle motion FAILED: player is not grounded after the idle window (y={player.transform.position.y:F3}).");
+                yield return result;
+            }
+
+            long skippedFrames = player.SkippedMotionFrames - skippedBefore;
+            if (skippedFrames == 0)
+            {
+                Debug.LogError("[PlayerTest] Idle motion FAILED: the zero-length motion state after a reset was never detected; " +
+                               "the guard did not engage, so CharacterController.Move was handed the degenerate vector.");
+                yield return result;
+            }
+
+            Debug.Log($"[PlayerTest] Idle motion PASSED: 45 idle frames after a movement reset, " +
+                      $"{skippedFrames} zero-length motion(s) detected and skipped before reaching CharacterController.Move, " +
+                      $"{assertionCount} IsNormalized assertion(s).");
+
             result.Passed = true;
             yield return result;
         }

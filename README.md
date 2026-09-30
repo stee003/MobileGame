@@ -105,6 +105,12 @@ attacks, abilities, dodge, stamina or health.
   steeper than `maxSlopeAngle` and falling back to `CharacterController.isGrounded` when the probe
   cannot see the surface. Landing and leaving-the-ground are exposed as `JustLanded` /
   `JustBecameAirborne`, and `LastLandingImpactSpeed` reports the impact speed.
+* **Engine-facing vector guard** — the motion passed to `CharacterController.Move` is checked first
+  (`MobileGame.Core.PhysicsQueryGuard`): a zero-length or non-finite motion is never handed to the
+  engine, because `Move` normalizes its motion internally and Unity then reports
+  `Assertion failed on expression: 'IsNormalized(dir, 0.001f)'`. Skipped frames are counted in
+  `SkippedMotionFrames`, so both verification suites can prove the engine never receives a
+  degenerate vector.
 * **Inspector configuration** — movement speed, acceleration, deceleration, rotation speed,
   gravity, terminal fall speed, ground stick force, ground layers, ground check distance, maximum
   slope angle and the camera reference. Read-only state (`Speed`, `VerticalSpeed`, `IsGrounded`,
@@ -116,10 +122,11 @@ feeds the same controller through `SetMobileMove` without any change to this scr
 
 `PlayerControllerTest` (`Assets/Scripts/Player/PlayerControllerTest.cs`) is the Play Mode
 verification suite for the controller: it drives the player through the input facade and checks
-wiring, grounded-at-spawn, forward/backward/left/right movement, camera-relative movement,
-acceleration, deceleration, rotation toward movement, gravity/falling/landing and slope traversal.
+wiring, grounded-at-spawn, idle motion integrity (no zero-length motion reaches the engine),
+forward/backward/left/right movement, camera-relative movement, acceleration, deceleration,
+rotation toward movement, gravity/falling/landing and slope traversal.
 It runs automatically on Start in Play Mode (or via its **Verify: Run Player Controller Test
-Suite** context menu) and reports `VERIFICATION PASSED` for all 14 checks. The suite teleports the
+Suite** context menu) and reports `VERIFICATION PASSED` for all 15 checks. The suite teleports the
 capsule around the arena while it runs (about 20 s of game time) and returns it to the spawn point
 at (0, 1, 8) when it finishes; set `Run On Start` to false on the component if you would rather
 trigger it by hand.
@@ -260,7 +267,7 @@ for Android/iOS, Android min API **24**, target API **35**, **ARM64** only.
 5. Open `Assets/Scenes/CombatTestScene.unity` and press **Play**:
    * The third-person camera frames the temporary capsule player at the default distance (5 m) and height (1.6 m) with zero Console errors.
    * `CameraSystemTest` runs automatically on Start (or via its **Verify: Run Camera Test Suite** context menu), reporting `VERIFICATION PASSED`.
-   * `PlayerControllerTest` runs automatically on Start (or via its **Verify: Run Player Controller Test Suite** context menu), reporting `VERIFICATION PASSED` for all 14 checks.
+   * `PlayerControllerTest` runs automatically on Start (or via its **Verify: Run Player Controller Test Suite** context menu), reporting `VERIFICATION PASSED` for all 15 checks (including *Idle motion integrity*, which fails if a zero-length motion reaches `CharacterController.Move` or if the `IsNormalized(dir, 0.001f)` assertion is logged).
    * `VirtualJoystickTest` runs automatically after the player suite (or via its **Verify: Run Virtual Joystick Test Suite** context menu), reporting `VERIFICATION PASSED`.
    * `TouchCameraControlTest` runs automatically after the joystick suite (or via its **Verify: Run Touch Camera Control Test Suite** context menu), reporting `VERIFICATION PASSED` across all checks (wiring, horizontal rotation, vertical camera limits, smooth rotation, adjustable sensitivity, movement joystick touch separation, simultaneous dual-thumb control, future UI button touch separation, and multi-aspect-ratio verification).
    * **Mobile touch camera in Game view**: drag on the right half of the Game view to smoothly orbit the camera horizontally and vertically (clamped between `-35°` and `+70°`). Dragging the movement joystick on the left moves the player without rotating the camera. Switch the Game view aspect ratio dropdown (`16:9`, `18:9`, `19.5:9`, `20:9`, `4:3`, `Free Aspect`) to verify responsive layout and consistent sensitivity across aspect ratios.

@@ -7,7 +7,9 @@ Headless tooling for `Assets/Scripts/Player/ThirdPersonPlayerController.cs`.
   slide-along-surface, depenetration, ground snapping, step offset). Arena geometry is parsed from
   `Assets/Scenes/CombatTestScene.unity`, so the slopes, platforms and walls under test are the real
   ones. Every scenario corresponds to a check in the in-Editor suite
-  (`Assets/Scripts/Player/PlayerControllerTest.cs`).
+  (`Assets/Scripts/Player/PlayerControllerTest.cs`), including the regression check for Unity's
+  `IsNormalized(dir, 0.001f)` assertion: a zero-length motion must never reach
+  `CharacterController.Move` (the guard in the controller skips those frames instead).
 
 ```bash
 python3 Tools/PlayerMovementVerification/simulate_player_movement.py

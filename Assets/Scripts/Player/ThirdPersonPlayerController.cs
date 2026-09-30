@@ -1,5 +1,6 @@
 using UnityEngine;
 using MobileGame.Camera;
+using MobileGame.Core;
 using MobileGame.Input;
 
 namespace MobileGame.Player
@@ -87,6 +88,8 @@ namespace MobileGame.Player
         private float m_groundDistance;
         private float m_lastLandingImpactSpeed;
 
+        private long m_skippedMotionFrames;    // Frames whose motion was too small to give the engine.
+
         // Public read-only state
         /// <summary>Full world-space velocity of the player (planar + vertical).</summary>
         public Vector3 Velocity => m_planarVelocity + Vector3.up * m_verticalVelocity;
@@ -123,6 +126,14 @@ namespace MobileGame.Player
 
         /// <summary>Fall speed on impact, in meters per second, at the last landing.</summary>
         public float LastLandingImpactSpeed => m_lastLandingImpactSpeed;
+
+        /// <summary>
+        /// Number of frames whose motion was too small (or not finite) to hand to
+        /// <see cref="CharacterController.Move"/>. While idle that is the zero-length motion which
+        /// triggers Unity's <c>IsNormalized(dir, 0.001f)</c> assertion, so the engine call is skipped
+        /// instead. Exposed for the verification suite.
+        /// </summary>
+        public long SkippedMotionFrames => m_skippedMotionFrames;
 
         /// <summary>The CharacterController driving this player.</summary>
         public CharacterController Controller => m_controller;
@@ -184,6 +195,10 @@ namespace MobileGame.Player
                 }
 
                 // Keep a small downward push so the capsule follows slopes instead of bouncing.
+                // Re-armed from any fall (including the first grounded frame after spawning) and
+                // from every landing. It stays exactly zero only in the state ResetMovementState()
+                // leaves behind (teleports, tests), where the motion guard in step 5 skips the
+                // engine call instead of handing Move a zero-length vector.
                 if (m_verticalVelocity < 0f)
                 {
                     m_verticalVelocity = -Mathf.Abs(groundStickForce);
@@ -201,13 +216,26 @@ namespace MobileGame.Player
 
             // 5. Apply the motion.
             Vector3 velocity = m_planarVelocity + Vector3.up * m_verticalVelocity;
+            Vector3 motion = velocity * deltaTime;
+
+            // CharacterController.Move normalizes its motion internally, so a zero-length motion
+            // makes Unity assert "IsNormalized(dir, 0.001f)" (it is also shorter than
+            // minMoveDistance, which the controller ignores anyway). Never make the call: skip the
+            // frame and let the guard be observable for the verification suite.
+            float minMoveDistance = m_controller != null ? m_controller.minMoveDistance : 0f;
+            if (!PhysicsQueryGuard.IsUsableMotion(motion, minMoveDistance))
+            {
+                m_skippedMotionFrames++;
+                return;
+            }
+
             if (m_controller != null && m_controller.enabled)
             {
-                m_controller.Move(velocity * deltaTime);
+                m_controller.Move(motion);
             }
             else
             {
-                transform.position += velocity * deltaTime;
+                transform.position += motion;
             }
         }
 

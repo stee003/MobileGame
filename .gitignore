@@ -51,3 +51,7 @@ crashlytics-build.properties
 .idea/
 .vscode/
 .DS_Store
+
+# Python tooling (Tools/)
+__pycache__/
+*.pyc
