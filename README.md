@@ -47,26 +47,40 @@ Assets/
 All scenes are registered and enabled in `ProjectSettings/EditorBuildSettings.asset`.
 `Assets/Scenes` is the home for future gameplay scenes.
 
-## Combat test arena (greybox)
+## Combat test arena (greybox) & third-person camera
 
-`CombatTestScene` is a deliberately small, texture-free outdoor arena used only to develop and
-verify **movement, camera, combat and animations** before any city content exists. It contains
-no player character, NPCs, enemies, buildings or final art — only clean modular primitive
-geometry built from Unity primitives and the flat-color `M_Greybox_*` URP Lit materials in
-`Assets/Art/Materials`:
+`CombatTestScene` is a development-only outdoor arena used to develop and verify **movement,
+camera, combat and animations** before any city content exists.
 
-* **Ground** — 44 × 44 m flat slab (top at y = 0).
-* **Walls** — 4 m perimeter walls plus two interior half-walls for cover.
-* **Architecture** — four pillars, one tall monolith block, an archway and three low cover
-  blocks; the center of the arena stays open for a future player character.
-* **Height variation** — a stepped platform (east), a ramp-up platform (west) and a three-tier
-  ziggurat (north), with walkable tops between 0.4 m and 1.8 m.
-* **PlayerSpawn** — an empty marker tagged `SpawnPoint` at (0, 0, 8), facing the arena center.
+The scene features the reusable **third-person camera system** and a temporary capsule placeholder
+target:
 
-Layers follow project conventions: walkable surfaces sit on `Ground`, blocking geometry on
-`Environment`. The scene carries its own Main Camera (overview of the arena) and Directional
-Light; `GameInput` bootstraps itself, so input is available immediately in Play Mode. Replace
-the scene camera with a gameplay camera when the player controller lands.
+* **Placeholder player target** — a temporary capsule object (`PlaceholderPlayer`) tagged `Player`
+  at (0, 1, 8) with `CharacterController` and `PlaceholderPlayerController` (WASD locomotion,
+  camera-relative heading, gravity, and jump). This is explicitly a temporary placeholder for
+  camera verification, not the final player character.
+* **ThirdPersonCamera** (`Assets/Scripts/Camera/ThirdPersonCamera.cs`) — reusable, decoupled camera
+  rig attached to `Main Camera`:
+  * Third-person target follow with adjustable pivot height/offset (default 1.6 m).
+  * 360° orbital horizontal rotation (yaw).
+  * Vertical rotation (pitch) strictly clamped between configurable min (-35°) and max (+70°) angles.
+  * Adjustable camera distance (1.5 m to 10 m, default 5 m) with interactive mouse scroll-wheel zoom.
+  * Critically damped spring smoothing for follow movement (`positionSmoothTime = 0.08s`) and
+    rotation (`rotationSmoothTime = 0.02s`).
+  * SphereCast obstacle collision avoidance (`collisionRadius = 0.25m`, `collisionOffset = 0.15m`)
+    against `Default`, `Environment`, and `Ground` layers with fast pull-in and smooth release.
+  * Configurable sensitivity and optional pitch inversion.
+  * Planar forward/right accessors for camera-relative character movement.
+  * Automatic cursor lock in Play Mode with Escape toggle.
+* **CameraSystemTest** (`Assets/Scripts/Camera/CameraSystemTest.cs`) — diagnostic suite verifying
+  target tracking, horizontal rotation, looking up/down clamping, distance/height adjustments,
+  and collision detection in Play Mode.
+* **Arena geometry**:
+  * **Ground** — 44 × 44 m flat slab (top at y = 0).
+  * **Walls** — 4 m perimeter walls plus two interior half-walls for cover.
+  * **Architecture** — four pillars, one tall monolith block, an archway and three low cover blocks.
+  * **Height variation** — stepped platform (east), ramp-up platform (west), and three-tier ziggurat (north).
+  * **PlayerSpawn** — empty marker tagged `SpawnPoint` at (0, 0, 8), facing the arena center.
 
 ## Rendering (URP 17.0.4)
 
@@ -167,6 +181,13 @@ for Android/iOS, Android min API **24**, target API **35**, **ARM64** only.
 4. With `BootScene` open, press **Play**, select the auto-created `GraphicsQualityManager` object
    and run its **Verify: Cycle Tiers + Reload Scenes** context menu — the Console must show the
    Low → Medium → High cycle plus both scene loads with no errors, ending in `VERIFICATION PASSED`.
-5. Open `Assets/Scenes/CombatTestScene.unity` and press **Play** — the overview camera shows the
-   greybox arena (ground, walls, pillars, arch, platforms, ramp and ziggurat) with no errors or
-   warnings in the Console.
+5. Open `Assets/Scenes/CombatTestScene.unity` and press **Play**:
+   * The third-person camera frames the placeholder capsule target at the default distance (5 m) and height (1.6 m) with zero Console errors.
+   * `CameraSystemTest` runs automatically on Start (or via its **Verify: Run Camera Test Suite** context menu), reporting `VERIFICATION PASSED`.
+   * **Moving around the arena**: WASD / arrow keys move the capsule around the arena, up the ramp, and onto platforms; the camera follows smoothly without jitter.
+   * **Rotating horizontally**: move the mouse left/right; the camera orbits smoothly around the capsule.
+   * **Looking up**: push mouse forward/up; view tilts up and clamps smoothly at -35°.
+   * **Looking down**: pull mouse backward/down; view tilts down and clamps smoothly at +70°.
+   * **Adjusting distance**: roll the mouse scroll wheel to zoom the camera smoothly between 1.5 m and 10 m.
+   * **Camera collision**: walk behind the perimeter walls, monolith, pillars, or archway; the camera pushes forward smoothly to prevent clipping into geometry, and eases back out when clear.
+   * **Cursor lock**: click into the game view to lock the mouse; press Escape to unlock.

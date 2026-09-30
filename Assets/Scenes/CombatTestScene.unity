@@ -3241,6 +3241,8 @@ GameObject:
   - component: {fileID: 100148}
   - component: {fileID: 100149}
   - component: {fileID: 100150}
+  - component: {fileID: 100155}
+  - component: {fileID: 100156}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -3256,13 +3258,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 100146}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.2147353, y: 0.0, z: 0.0, w: 0.9766723}
-  m_LocalPosition: {x: 0.0, y: 12.0, z: -26.0}
+  m_LocalRotation: {x: 0.0, y: 0.9914449, z: -0.1305262, w: 0.0}
+  m_LocalPosition: {x: 0.0, y: 3.8941, z: 12.8296}
   m_LocalScale: {x: 1.0, y: 1.0, z: 1.0}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 24.8, y: 0.0, z: 0.0}
+  m_LocalEulerAnglesHint: {x: 15.0, y: 180.0, z: 0.0}
 --- !u!20 &100148
 Camera:
   m_ObjectHideFlags: 0
@@ -3484,6 +3486,186 @@ MonoBehaviour:
   m_LightCookieSize: {x: 1, y: 1}
   m_LightCookieOffset: {x: 0, y: 0}
   m_SoftShadowQuality: 1
+--- !u!114 &100155
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 100146}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 09b9dfed5f124f7299beb6495f03787a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  target: {fileID: 100161}
+  targetOffset: {x: 0, y: 1.6, z: 0}
+  defaultDistance: 5
+  minDistance: 1.5
+  maxDistance: 10
+  minVerticalAngle: -35
+  maxVerticalAngle: 70
+  horizontalSensitivity: 0.15
+  verticalSensitivity: 0.15
+  invertPitch: 0
+  zoomSensitivity: 0.5
+  lockCursor: 1
+  enableSmoothing: 1
+  positionSmoothTime: 0.08
+  rotationSmoothTime: 0.02
+  enableCollision: 1
+  collisionRadius: 0.25
+  collisionOffset: 0.15
+  collisionLayers:
+    serializedVersion: 2
+    m_Bits: 147457
+  collisionPushSpeed: 25
+  collisionReleaseSpeed: 4
+--- !u!114 &100156
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 100146}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a901447340ee4159a5c96233daff196e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  thirdPersonCamera: {fileID: 100155}
+  runOnStart: 1
+--- !u!1 &100160
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 100161}
+  - component: {fileID: 100162}
+  - component: {fileID: 100163}
+  - component: {fileID: 100164}
+  - component: {fileID: 100165}
+  m_Layer: 8
+  m_Name: PlaceholderPlayer
+  m_TagString: Player
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &100161
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 100160}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0.0, y: 1.0, z: 0.0, w: 0.0}
+  m_LocalPosition: {x: 0.0, y: 1.0, z: 8.0}
+  m_LocalScale: {x: 1.0, y: 1.0, z: 1.0}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0.0, y: 180.0, z: 0.0}
+--- !u!33 &100162
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 100160}
+  m_Mesh: {fileID: 10208, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!23 &100163
+MeshRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 100160}
+  m_Enabled: 1
+  m_CastShadows: 1
+  m_ReceiveShadows: 1
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 2
+  m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 2100000, guid: cac18c9634c2e9c651244aa03686098e, type: 2}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 3
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+  m_AdditionalVertexStreams: {fileID: 0}
+--- !u!143 &100164
+CharacterController:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 100160}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Height: 2
+  m_Radius: 0.5
+  m_SlopeLimit: 45
+  m_StepOffset: 0.3
+  m_SkinWidth: 0.08
+  m_MinMoveDistance: 0.001
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!114 &100165
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 100160}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a3d22436282f47e287bc93e6e2fe7f0d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  targetCamera: {fileID: 100155}
+  moveSpeed: 6
+  turnSpeed: 720
+  jumpHeight: 1.2
+  gravity: 20
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -3491,3 +3673,4 @@ SceneRoots:
   - {fileID: 100001}
   - {fileID: 100146}
   - {fileID: 100151}
+  - {fileID: 100160}
