@@ -44,6 +44,9 @@ namespace MobileGame.Player
         private int m_passed;
         private int m_total;
 
+        /// <summary>True while the automated suite is in progress. Other diagnostics can defer until it finishes.</summary>
+        public bool IsRunning => m_running;
+
         private void Start()
         {
             if (runOnStart)
