@@ -134,6 +134,9 @@ namespace MobileGame.UI
         /// <summary>True while a finger is driving the stick.</summary>
         public bool IsActive => m_active;
 
+        /// <summary>Touch ID of the finger currently driving the stick, or -1 when idle.</summary>
+        public int ActiveTouchId => m_active ? m_touchId : -1;
+
         /// <summary>True once the runtime visuals exist.</summary>
         public bool IsUiBuilt => m_uiBuilt;
 
@@ -198,7 +201,7 @@ namespace MobileGame.UI
             {
                 // Lets the mouse drive the stick when testing in the Editor Game view.
                 // Enable() is idempotent; we only disable what we enabled.
-                UnityEngine.InputSystem.TouchSimulation.Enable();
+                UnityEngine.InputSystem.EnhancedTouch.TouchSimulation.Enable();
                 m_touchSimulationEnabled = true;
             }
 #endif
@@ -214,7 +217,7 @@ namespace MobileGame.UI
 #if UNITY_EDITOR
             if (m_touchSimulationEnabled)
             {
-                UnityEngine.InputSystem.TouchSimulation.Disable();
+                UnityEngine.InputSystem.EnhancedTouch.TouchSimulation.Disable();
                 m_touchSimulationEnabled = false;
             }
 #endif
@@ -450,6 +453,28 @@ namespace MobileGame.UI
             return Vector2.Distance(center, edge);
         }
 
+        /// <summary>
+        /// True when <paramref name="screenPoint"/> lies inside the joystick's interactive
+        /// touch area or visible base ring. Used by <see cref="TouchCameraControl"/> to guarantee
+        /// that touching the movement joystick never rotates the camera.
+        /// </summary>
+        public bool ContainsScreenPoint(Vector2 screenPoint)
+        {
+            EnsureUiBuilt();
+            if (!m_uiBuilt)
+                return false;
+
+            UnityEngine.Camera uiCam = ResolveUICamera();
+            if (m_root != null && RectTransformUtility.RectangleContainsScreenPoint(m_root, screenPoint, uiCam))
+                return true;
+
+            if (m_base != null && m_base.gameObject.activeInHierarchy &&
+                RectTransformUtility.RectangleContainsScreenPoint(m_base, screenPoint, uiCam))
+                return true;
+
+            return false;
+        }
+
         private void EnsureUiBuilt()
         {
             if (!m_uiBuilt && Application.isPlaying)
@@ -484,7 +509,19 @@ namespace MobileGame.UI
 
         private static Canvas CreateAndConfigureCanvas()
         {
-            GameObject canvasGo = new GameObject("MobileControlsCanvas", typeof(Canvas), typeof(CanvasScaler));
+            GameObject existing = GameObject.Find("MobileControlsCanvas");
+            if (existing != null)
+            {
+                Canvas existingCanvas = existing.GetComponent<Canvas>();
+                if (existingCanvas != null)
+                {
+                    if (existing.GetComponent<GraphicRaycaster>() == null)
+                        existing.AddComponent<GraphicRaycaster>();
+                    return existingCanvas;
+                }
+            }
+
+            GameObject canvasGo = new GameObject("MobileControlsCanvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
             Canvas canvas = canvasGo.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 100;

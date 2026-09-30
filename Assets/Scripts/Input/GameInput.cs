@@ -73,10 +73,27 @@ namespace MobileGame.Input
         {
             get
             {
-                Vector2 mouse = m_lookAction != null && m_lookAction.enabled
+                Vector2 mouse = (!ShouldSuppressRawMouseLook() && m_lookAction != null && m_lookAction.enabled)
                     ? m_lookAction.ReadValue<Vector2>() : Vector2.zero;
                 return mouse + m_mobileLook;
             }
+        }
+
+        private static bool ShouldSuppressRawMouseLook()
+        {
+            if (UnityEngine.InputSystem.EnhancedTouch.TouchSimulation.instance != null &&
+                UnityEngine.InputSystem.EnhancedTouch.TouchSimulation.instance.enabled)
+            {
+                return true;
+            }
+
+            if (UnityEngine.InputSystem.EnhancedTouch.EnhancedTouchSupport.enabled &&
+                UnityEngine.InputSystem.EnhancedTouch.Touch.activeTouches.Count > 0)
+            {
+                return true;
+            }
+
+            return Cursor.lockState != CursorLockMode.Locked;
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]

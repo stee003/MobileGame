@@ -1,4 +1,5 @@
 using UnityEngine;
+using MobileGame.Camera;
 using MobileGame.Input;
 
 namespace MobileGame.Player

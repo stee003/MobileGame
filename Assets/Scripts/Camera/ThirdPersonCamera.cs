@@ -62,8 +62,8 @@ namespace MobileGame.Camera
         [Tooltip("Distance adjustment step per mouse scroll notch.")]
         [SerializeField] private float zoomSensitivity = 0.5f;
 
-        [Tooltip("Automatically locks cursor into the game window on click in Play Mode.")]
-        [SerializeField] private bool lockCursor = true;
+        [Tooltip("Automatically locks cursor into the game window on click in Play Mode (disabled by default for mobile touch controls).")]
+        [SerializeField] private bool lockCursor = false;
 
         [Header("Smoothing")]
         [Tooltip("Enables critically damped spring smoothing for camera follow and rotation.")]
@@ -175,10 +175,18 @@ namespace MobileGame.Camera
 
         private void Start()
         {
-            if (lockCursor && Application.isPlaying)
+            if (!Application.isPlaying)
+                return;
+
+            if (lockCursor)
             {
                 Cursor.lockState = CursorLockMode.Locked;
                 Cursor.visible = false;
+            }
+            else
+            {
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
             }
         }
 
@@ -419,6 +427,23 @@ namespace MobileGame.Camera
             maxVerticalAngle = Mathf.Max(minAngle, maxAngle);
             m_targetPitch = Mathf.Clamp(m_targetPitch, minVerticalAngle, maxVerticalAngle);
             m_currentPitch = Mathf.Clamp(m_currentPitch, minVerticalAngle, maxVerticalAngle);
+        }
+
+        /// <summary>Sets the camera yaw and pitch angles (clamped to vertical limits).</summary>
+        public void SetAngles(float yaw, float pitch, bool snap = false)
+        {
+            m_targetYaw = yaw % 360f;
+            if (m_targetYaw < 0f) m_targetYaw += 360f;
+            m_targetPitch = Mathf.Clamp(pitch, minVerticalAngle, maxVerticalAngle);
+
+            if (snap)
+            {
+                m_currentYaw = m_targetYaw;
+                m_currentPitch = m_targetPitch;
+                m_yawVelocity = 0f;
+                m_pitchVelocity = 0f;
+                UpdateCamera(0f);
+            }
         }
 
         /// <summary>Enables or disables smoothing for movement and rotation.</summary>

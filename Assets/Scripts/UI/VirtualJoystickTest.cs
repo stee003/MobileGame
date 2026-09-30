@@ -54,11 +54,14 @@ namespace MobileGame.UI
         private VirtualJoystick m_joystick;
         private GameInput m_input;
         private Touchscreen m_touchDevice;
-        private uint m_nextFingerId = 100;
+        private int m_nextFingerId = 100;
 
         private bool m_running;
         private int m_passed;
         private int m_total;
+
+        /// <summary>True while the automated suite is in progress. Other diagnostics can defer until it finishes.</summary>
+        public bool IsRunning => m_running;
 
         private void Start()
         {
@@ -164,7 +167,7 @@ namespace MobileGame.UI
             // 1. Touch movement ------------------------------------------------
             Debug.Log("[JoystickTest] --- Touch movement ---");
             {
-                uint finger = NewFinger();
+                int finger = NewFinger();
                 yield return TouchStep(finger, TouchPhase.Began, center);
                 yield return TouchStep(finger, TouchPhase.Moved, center + Vector2.up * (radius * 0.8f));
 
@@ -184,7 +187,7 @@ namespace MobileGame.UI
             // 2. Diagonal movement ---------------------------------------------
             Debug.Log("[JoystickTest] --- Diagonal movement ---");
             {
-                uint finger = NewFinger();
+                int finger = NewFinger();
                 Vector2 diagonal = new Vector2(0.70710678f, 0.70710678f);
                 Vector2 target = center + diagonal * (radius * 0.9f);
                 yield return TouchStep(finger, TouchPhase.Began, center);
@@ -205,7 +208,7 @@ namespace MobileGame.UI
             // 3. Maximum input ---------------------------------------------------
             Debug.Log("[JoystickTest] --- Maximum input ---");
             {
-                uint finger = NewFinger();
+                int finger = NewFinger();
                 Vector2 target = center + Vector2.right * (radius * 2.5f); // Far beyond the ring.
                 yield return TouchStep(finger, TouchPhase.Began, center);
                 yield return TouchStep(finger, TouchPhase.Moved, target);
@@ -228,7 +231,7 @@ namespace MobileGame.UI
             // 4. Dead zone --------------------------------------------------------
             Debug.Log("[JoystickTest] --- Dead zone ---");
             {
-                uint finger = NewFinger();
+                int finger = NewFinger();
                 yield return TouchStep(finger, TouchPhase.Began, center);
                 yield return TouchStep(finger, TouchPhase.Moved, center + Vector2.up * (radius * deadZone * 0.5f));
                 yield return Settle(3);
@@ -248,8 +251,8 @@ namespace MobileGame.UI
             // 5. Multi-touch safety ------------------------------------------------
             Debug.Log("[JoystickTest] --- Multi-touch safety ---");
             {
-                uint fingerA = NewFinger();
-                uint fingerB = NewFinger();
+                int fingerA = NewFinger();
+                int fingerB = NewFinger();
 
                 yield return TouchStep(fingerA, TouchPhase.Began, center);
                 yield return TouchStep(fingerA, TouchPhase.Moved, center + Vector2.up * (radius * 0.8f));
@@ -281,7 +284,7 @@ namespace MobileGame.UI
                 Debug.Log("[JoystickTest] --- Player integration ---");
                 Vector3 startPlanar = new Vector3(player.transform.position.x, 0f, player.transform.position.z);
 
-                uint finger = NewFinger();
+                int finger = NewFinger();
                 yield return TouchStep(finger, TouchPhase.Began, center);
                 yield return TouchStep(finger, TouchPhase.Moved, center + Vector2.up * (radius * 0.8f));
                 float expectedMag = ExpectedMagnitude(0.8f, deadZone);
@@ -337,7 +340,7 @@ namespace MobileGame.UI
         }
 
         /// <summary>Shared helper: ends the held finger and verifies a clean release.</summary>
-        private IEnumerator ReleaseAndVerify(uint finger, Vector2 lastPosition)
+        private IEnumerator ReleaseAndVerify(int finger, Vector2 lastPosition)
         {
             yield return TouchStep(finger, TouchPhase.Ended, lastPosition);
             yield return WaitForCondition(() => !m_joystick.IsActive, CheckTimeoutSeconds, "releasing the finger ends stick activity");
@@ -366,10 +369,10 @@ namespace MobileGame.UI
             yield return new WaitForSeconds(0.25f);
         }
 
-        private uint NewFinger() => m_nextFingerId++;
+        private int NewFinger() => m_nextFingerId++;
 
         /// <summary>Queues a touch state change and waits a frame for the Input System to dispatch it.</summary>
-        private IEnumerator TouchStep(uint finger, TouchPhase phase, Vector2 screenPosition)
+        private IEnumerator TouchStep(int finger, TouchPhase phase, Vector2 screenPosition)
         {
             InputSystem.QueueStateEvent(m_touchDevice, new TouchState
             {
