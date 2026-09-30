@@ -88,8 +88,9 @@ The scene features the reusable **third-person camera system** and a temporary c
 `HeroCharacterVisual` (`Assets/Scripts/Player/HeroCharacterVisual.cs`) builds the original low-poly
 hero out of Unity primitives on the temporary capsule: deep teal-blue bodysuit, cyan visor and trim,
 short half-cape, brass belt and emblem, light boots and gloves, swept-crest hair. It is visual only -
-the `CharacterController` remains the sole physics shape, no colliders are added and there are no
-animations or animation components.
+the `CharacterController` remains the sole physics shape, no colliders are added, and the script
+itself adds no animation components (the rig's `Animator` lives on its own child object, see *Hero
+rig* below).
 
 The hero uses **seven material roles**, one material each, so no body part shares a flat colour:
 
@@ -130,6 +131,50 @@ In the Editor, `HeroMaterialTest` runs a 13-check Play Mode suite on the hero in
 measures readability under a bright, a dim warm and a cool key light), and
 **Tools/MobileGame/Hero Materials/Validate PBR Setup** checks the assets themselves, including the
 texture import settings.
+
+## Hero rig (humanoid skeleton & Unity animation setup)
+
+`HeroRig` (`Assets/Scripts/Player/HeroRig.cs`) turns the hero into a character Unity's animation
+system can drive. It builds a **52-bone humanoid skeleton** as a child of the hero visual, under a
+`HeroRig` root object, and binds all 57 hero meshes to it:
+
+* **Torso** — `Hips` → `Spine` → `Chest` → `Neck` → `Head`, plus the `HeadTop_End` helper that gives
+  the head bone an axis.
+* **Arms** (per side) — `Shoulder` (clavicle) → `UpperArm` → `LowerArm` → `Hand` → 15 finger bones
+  (thumb, index, middle, ring, little × proximal/intermediate/distal).
+* **Legs** (per side) — `UpperLeg` → `LowerLeg` → `Foot` → `Toes`.
+
+51 of the 52 bones map one-to-one onto `HumanBodyBones` (all 21 mandatory bones plus all 30 finger
+bones), so the avatar is built from a `HumanDescription` and validated (`isValid && isHuman`) before
+it is used, with a generic avatar as fallback. Every joint carries authored limits, and the left and
+right chains are exact mirrors.
+
+Unity's humanoid importer expects a real T-pose, so the rig poses the arms out to the sides
+(`localRotation` ±90° about Z, never a world rotation — the player root is yawed), builds the avatar,
+then returns the hero to its authored resting pose with both soles exactly on the ground. The
+`Animator` sits **on the skeleton root, not on the `Player` root**, with `applyRootMotion = false`
+(the `CharacterController` owns that transform), `cullingMode = AlwaysAnimate` and an **empty
+controller slot** — there is no combat animation yet, only the rig.
+
+Because the hero is built from Unity primitives (shared meshes, no bone weights), the binding is
+**rigid**: each mesh follows exactly one bone, and the deformation work is joint placement, pivots,
+axes, limits and volume overlap. Eight deformation problems were found and fixed, the largest being
+the cape (which tears by up to 75.9 mm if split across two bones, and opens 0.0 mm as one sheet on
+the chest) and the abdomen/neck meshes that sat in knife-edge gaps between their neighbours.
+
+Tools (`Tools/HeroRigVerification/`, see its `README.md` and `REPORT.md`):
+
+* `verify_hero_rig.py` - static verification of the skeleton, the binding, the Unity animation setup,
+  the scope (controller and hero builder untouched, no animation content) and the scene wiring
+  (58 checks, standard library only, CI friendly).
+* `simulate_hero_rig.py` - geometric verification on a model that parses the same C# tables and
+  reproduces the transform hierarchy, Unity's quaternion math and the rigid binding: T-pose and rest
+  pose, 30 simple rotations with rigid-travel/seam/ground checks, and 400 random multi-joint stress
+  poses (51 checks).
+
+In the Editor, `HeroRigTest` runs the 40-check Play Mode suite (30 rotations plus 150 random poses),
+and **Tools/MobileGame/Hero Rig/Validate Rig Setup** checks the rig that is actually in the open
+scene.
 
 ## Player controller
 
@@ -339,6 +384,18 @@ for Android/iOS, Android min API **24**, target API **35**, **ARM64** only.
      readability measurement under a bright, a dim warm and a cool key light.
    * **Material assets in the Editor**: run **Tools/MobileGame/Hero Materials/Validate PBR Setup** -
      the Console reports PASSED for the seven materials, the 21 maps and their import settings.
+   * **Hero rig**: the hero stands with both soles on the ground and the `HeroRig` root appears under
+     the hero visual, carrying the `Animator`. `HeroRigTest` runs automatically after the material
+     suite (or via its **Verify: Run Hero Rig Test Suite** context menu) and reports
+     `VERIFICATION PASSED` for all 40 checks: the Animator/avatar setup, the humanoid mapping of all
+     51 bones, the binding of all 57 meshes, the T-pose, 30 simple rotations (hips, spine, chest,
+     neck, head, shoulders, elbows, wrists, fingers, hips, knees, ankles, toes) and 150 random
+     multi-joint poses. The player still moves exactly as before - the rig adds no root motion and
+     touches no collider.
+   * **Rig in the Editor**: run **Tools/MobileGame/Hero Rig/Validate Rig Setup** - the Console
+     reports PASSED for the skeleton, the humanoid avatar, the binding and the Animator settings.
+   * **Headless rig checks**: `python3 Tools/HeroRigVerification/verify_hero_rig.py` (58 checks) and
+     `python3 Tools/HeroRigVerification/simulate_hero_rig.py` (51 checks) both exit 0.
 
 Note: the ziggurat's 0.6 m tier steps are taller than the `CharacterController`'s 0.3 m step
 offset, so the capsule cannot climb them; the stepped platform on the east side (0.4 m steps) has
