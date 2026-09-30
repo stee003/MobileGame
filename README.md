@@ -42,9 +42,31 @@ Assets/
 | --- | --- | --- |
 | `Assets/Scenes/BootScene.unity` | 0 (startup) | Main Camera (skybox clear, HDR, post-processing on) + Directional Light |
 | `Assets/Scenes/TestScene.unity` | 1 | Input architecture diagnostics only (no player or gameplay) |
+| `Assets/Scenes/CombatTestScene.unity` | 2 | Minimal outdoor greybox combat test arena (no gameplay yet) |
 
-Both scenes are registered and enabled in `ProjectSettings/EditorBuildSettings.asset`.
+All scenes are registered and enabled in `ProjectSettings/EditorBuildSettings.asset`.
 `Assets/Scenes` is the home for future gameplay scenes.
+
+## Combat test arena (greybox)
+
+`CombatTestScene` is a deliberately small, texture-free outdoor arena used only to develop and
+verify **movement, camera, combat and animations** before any city content exists. It contains
+no player character, NPCs, enemies, buildings or final art — only clean modular primitive
+geometry built from Unity primitives and the flat-color `M_Greybox_*` URP Lit materials in
+`Assets/Art/Materials`:
+
+* **Ground** — 44 × 44 m flat slab (top at y = 0).
+* **Walls** — 4 m perimeter walls plus two interior half-walls for cover.
+* **Architecture** — four pillars, one tall monolith block, an archway and three low cover
+  blocks; the center of the arena stays open for a future player character.
+* **Height variation** — a stepped platform (east), a ramp-up platform (west) and a three-tier
+  ziggurat (north), with walkable tops between 0.4 m and 1.8 m.
+* **PlayerSpawn** — an empty marker tagged `SpawnPoint` at (0, 0, 8), facing the arena center.
+
+Layers follow project conventions: walkable surfaces sit on `Ground`, blocking geometry on
+`Environment`. The scene carries its own Main Camera (overview of the arena) and Directional
+Light; `GameInput` bootstraps itself, so input is available immediately in Play Mode. Replace
+the scene camera with a gameplay camera when the player controller lands.
 
 ## Rendering (URP 17.0.4)
 
@@ -145,3 +167,6 @@ for Android/iOS, Android min API **24**, target API **35**, **ARM64** only.
 4. With `BootScene` open, press **Play**, select the auto-created `GraphicsQualityManager` object
    and run its **Verify: Cycle Tiers + Reload Scenes** context menu — the Console must show the
    Low → Medium → High cycle plus both scene loads with no errors, ending in `VERIFICATION PASSED`.
+5. Open `Assets/Scenes/CombatTestScene.unity` and press **Play** — the overview camera shows the
+   greybox arena (ground, walls, pillars, arch, platforms, ramp and ziggurat) with no errors or
+   warnings in the Console.
