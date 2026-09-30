@@ -3704,13 +3704,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3bb65d9853524008a88c9bdc176102d6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  suitMaterial: {fileID: 0}
-  accentMaterial: {fileID: 0}
-  skinMaterial: {fileID: 0}
-  hairMaterial: {fileID: 0}
-  bootsMaterial: {fileID: 0}
-  beltMaterial: {fileID: 0}
+  skinMaterial: {fileID: 2100000, guid: 8f9a3f76f92e49779e6b0cb223ec0590, type: 2}
+  hairMaterial: {fileID: 2100000, guid: 3f5a3334c7154ee19d43d577f8a90474, type: 2}
+  suitMaterial: {fileID: 2100000, guid: b7751b8902cc46749d0d7b584f731fb0, type: 2}
+  accentMaterial: {fileID: 2100000, guid: 9f3940ee892842cf915595a683a7bc2c, type: 2}
+  bootsMaterial: {fileID: 2100000, guid: b96c638082914c5c8257e3e1aa2c312c, type: 2}
+  glovesMaterial: {fileID: 2100000, guid: 62d8577a05f964494311434d7cf4e373, type: 2}
+  metalMaterial: {fileID: 2100000, guid: cc05d70d1529f49d321dac3abdec202e, type: 2}
   verticalOffset: -1
+  logMaterialResolution: 1
 --- !u!1 &200001
 GameObject:
   m_ObjectHideFlags: 0
@@ -3804,6 +3806,54 @@ MonoBehaviour:
   thirdPersonCamera: {fileID: 100155}
   player: {fileID: 100165}
   runOnStart: 1
+--- !u!1 &200020
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 200021}
+  - component: {fileID: 200022}
+  m_Layer: 0
+  m_Name: HeroMaterialTest
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &200021
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 200020}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &200022
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 200020}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 88e2f2b7d7daf54f0d8059472dcb60c5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  heroVisual: {fileID: 100168}
+  runOnStart: 1
+  verifyLightingReadability: 1
+  captureSize: 256
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -3814,3 +3864,4 @@ SceneRoots:
   - {fileID: 100160}
   - {fileID: 200001}
   - {fileID: 200011}
+  - {fileID: 200020}

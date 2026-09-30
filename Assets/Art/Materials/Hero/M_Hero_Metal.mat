@@ -7,7 +7,7 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: M_Hero_Suit
+  m_Name: M_Hero_Metal
   m_Shader: {fileID: 4800000, guid: 933532a4fcc9baf4fa0491de14d08ed7, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
@@ -28,11 +28,11 @@ Material:
     serializedVersion: 3
     m_TexEnvs:
     - _BaseMap:
-        m_Texture: {fileID: 2800000, guid: b60da143686e7247aa31aebac446f7a7, type: 3}
+        m_Texture: {fileID: 2800000, guid: 411809ee4982a94c93fcc32143ff79ad, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _BumpMap:
-        m_Texture: {fileID: 2800000, guid: 0cd94e353bb84b0357a013e4c3d8edba, type: 3}
+        m_Texture: {fileID: 2800000, guid: 84c6d92fbfbd0809bb3a4000f003fe10, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _DetailAlbedoMap:
@@ -52,15 +52,15 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MainTex:
-        m_Texture: {fileID: 2800000, guid: b60da143686e7247aa31aebac446f7a7, type: 3}
+        m_Texture: {fileID: 2800000, guid: 411809ee4982a94c93fcc32143ff79ad, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MetallicGlossMap:
-        m_Texture: {fileID: 2800000, guid: a8239a502fa6805bb935f22f9bb1c15c, type: 3}
+        m_Texture: {fileID: 2800000, guid: 0218bbd43cb6d7f8b042182a86519f77, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _OcclusionMap:
-        m_Texture: {fileID: 2800000, guid: a8239a502fa6805bb935f22f9bb1c15c, type: 3}
+        m_Texture: {fileID: 2800000, guid: 0218bbd43cb6d7f8b042182a86519f77, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _ParallaxMap:
@@ -90,7 +90,7 @@ Material:
     - _AlphaToMask: 0.0
     - _Blend: 0.0
     - _BlendModePreserveSpecular: 1.0
-    - _BumpScale: 1.0
+    - _BumpScale: 0.7
     - _ClearCoatMask: 0.0
     - _ClearCoatSmoothness: 0.0
     - _Cull: 2.0
@@ -103,8 +103,8 @@ Material:
     - _GlossMapScale: 1.0
     - _Glossiness: 1.0
     - _GlossyReflections: 1.0
-    - _Metallic: 0.0
-    - _OcclusionStrength: 0.95
+    - _Metallic: 0.9
+    - _OcclusionStrength: 0.8
     - _Parallax: 0.005
     - _QueueOffset: 0.0
     - _ReceiveShadows: 1.0

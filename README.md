@@ -32,6 +32,7 @@ Assets/
   Art/
     Characters/    Environments/  Animations/
     Materials/     Textures/      VFX/
+      Hero/          Hero/                      hero PBR materials and their maps
   Audio/  Data/  Prefabs/  Scenes/  Scripts/  UI/
   Settings/        URP pipeline assets (see below)
 ```
@@ -81,6 +82,54 @@ The scene features the reusable **third-person camera system** and a temporary c
   * **Architecture** — four pillars, one tall monolith block, an archway and three low cover blocks.
   * **Height variation** — stepped platform (east), ramp-up platform (west), and three-tier ziggurat (north).
   * **PlayerSpawn** — empty marker tagged `SpawnPoint` at (0, 0, 8), facing the arena center.
+
+## Hero character & PBR materials
+
+`HeroCharacterVisual` (`Assets/Scripts/Player/HeroCharacterVisual.cs`) builds the original low-poly
+hero out of Unity primitives on the temporary capsule: deep teal-blue bodysuit, cyan visor and trim,
+short half-cape, brass belt and emblem, light boots and gloves, swept-crest hair. It is visual only -
+the `CharacterController` remains the sole physics shape, no colliders are added and there are no
+animations or animation components.
+
+The hero uses **seven material roles**, one material each, so no body part shares a flat colour:
+
+| Role | Asset | Body parts | Base colour | Metallic | Roughness |
+| --- | --- | --- | --- | --- | --- |
+| Skin | `M_Hero_Skin` | head, neck, jaw, ears | warm mid-tone skin, pores and creases | 0 | 0.50–0.77 |
+| Hair | `M_Hero_Hair` | hair, brows, eye slits | blue-black strands with a streaky sheen | 0 | 0.40–0.70 |
+| Primary costume | `M_Hero_Suit` | bodysuit, leggings, sleeves, shoulder armour, cape | deep teal-blue weave with folds | 0 | 0.61–0.92 |
+| Secondary costume | `M_Hero_Accent` | visor, trims, hip accents, belt gem, emblem inlay | electric cyan ripstop | 0 | 0.38–0.63 |
+| Boots | `M_Hero_Boots` | boots and cuffs | warm bone leather, grain, stitching, scuffs | 0 | 0.55–0.80 |
+| Gloves | `M_Hero_Gloves` | gloves, cuffs, knuckle pads | cool light grip leather, quilting | 0 | 0.30–0.75 |
+| Metallic details | `M_Hero_Metal` | belt, buckle, emblem ring, visor bolts, boot straps | brushed brass with tarnish | 0.76–0.92 | 0.34–0.80 |
+
+Every role is URP Lit with a **base colour map**, a **normal map** and a **channel-packed mask**
+(R metallic, G occlusion, A smoothness) from `Assets/Art/Textures/Hero/`, and the same keyword set
+(`_NORMALMAP`, `_METALLICGLOSSMAP`, `_OCCLUSIONMAP`) so the hero stays in one SRP Batcher variant.
+`_Smoothness` is 1 on all seven because URP multiplies that slider into the mask alpha - the authored
+roughness is per pixel, which is what keeps skin and cloth from looking plastic or flat. Only the
+metallic-details role is metal; everything else is a dielectric.
+
+`HeroMaterials` (`Assets/Scripts/Player/HeroMaterials.cs`) resolves the set at runtime: Inspector
+assignments first (what `CombatTestScene` uses), then a `Resources/HeroMaterials` set for prefabs and
+builds, then procedurally generated fallback materials - so a missing asset never leaves the hero
+with flat colours or an unassigned renderer.
+
+Tools (`Tools/HeroMaterialVerification/`, see its `README.md` and `REPORT.md`):
+
+* `generate_hero_textures.py` - writes the 21 maps (deterministic, tileable, seamless on the
+  primitives' 0..1 UV layout).
+* `author_hero_materials.py` - writes the seven materials and the texture import settings
+  (`--check` verifies they are current).
+* `verify_hero_materials.py` - static verification of the materials, the maps, the code and the scene
+  wiring (289 checks, standard library only, CI friendly).
+* `render_hero_preview.py` - renders the hero wearing the authored materials in the arena lighting;
+  the output is in `Tools/HeroMaterialVerification/preview/hero_material_preview.png`.
+
+In the Editor, `HeroMaterialTest` runs a 13-check Play Mode suite on the hero in the arena (it even
+measures readability under a bright, a dim warm and a cool key light), and
+**Tools/MobileGame/Hero Materials/Validate PBR Setup** checks the assets themselves, including the
+texture import settings.
 
 ## Player controller
 
@@ -283,6 +332,13 @@ for Android/iOS, Android min API **24**, target API **35**, **ARM64** only.
    * **Falling and landing**: walk off `Platform_West` (1.2 m) or the east platform (1.6 m); the capsule falls, reports `JustLanded`, and settles on the floor.
    * **Collisions**: walk into the monolith, pillars or perimeter walls; the capsule stops at the surface instead of passing through.
    * **Cursor lock**: click into the game view to lock the mouse; press Escape to unlock.
+   * **Hero materials**: the hero renders with seven distinct PBR materials (skin, hair, bodysuit,
+     cyan trim, bone boots, light-gray gloves, brass metal) - no flat-coloured parts. `HeroMaterialTest`
+     runs automatically after the other suites (or via its **Verify: Run Hero Material Test Suite**
+     context menu) and reports `VERIFICATION PASSED` for all 13 checks, including the lighting
+     readability measurement under a bright, a dim warm and a cool key light.
+   * **Material assets in the Editor**: run **Tools/MobileGame/Hero Materials/Validate PBR Setup** -
+     the Console reports PASSED for the seven materials, the 21 maps and their import settings.
 
 Note: the ziggurat's 0.6 m tier steps are taller than the `CharacterController`'s 0.3 m step
 offset, so the capsule cannot climb them; the stepped platform on the east side (0.4 m steps) has

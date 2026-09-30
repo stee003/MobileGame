@@ -1,0 +1,5 @@
+# Python dependencies for the headless hero material tooling.
+#   python3 -m pip install --user -r Tools/HeroMaterialVerification/requirements.txt
+# verify_hero_materials.py only needs the standard library.
+numpy>=1.24
+Pillow>=10.0
