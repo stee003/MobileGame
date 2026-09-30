@@ -86,6 +86,28 @@ UP = Vec3(0, 1, 0)
 ZERO = Vec3(0, 0, 0)
 
 
+# ---------------------------------------------------------------------------
+# Mirror of Assets/Scripts/Core/PhysicsQueryGuard.cs
+# ---------------------------------------------------------------------------
+
+DIRECTION_TOLERANCE = 0.001   # Unity: "Assertion failed on expression: 'IsNormalized(dir, 0.001f)'"
+
+
+def usable_motion(motion, min_distance=0.0):
+    """True when a motion vector may be handed to CharacterController.Move.
+
+    Move normalizes its motion internally; a zero-length vector (or one shorter than the
+    controller's minMoveDistance, which it ignores anyway) makes it assert IsNormalized(dir).
+    """
+    threshold = max(abs(min_distance), DIRECTION_TOLERANCE)
+    return motion.sqr_magnitude > threshold * threshold
+
+
+def usable_direction(direction, tolerance=DIRECTION_TOLERANCE):
+    """True when a vector is a legal physics query direction (unit length within the tolerance)."""
+    return abs(direction.magnitude - 1.0) <= tolerance
+
+
 def angle_between(a, b):
     """Unity's Vector3.Angle (degrees, 0..180)."""
     denom = a.magnitude * b.magnitude
@@ -334,14 +356,17 @@ class World(object):
         return max(0.0, clearance - radius), normal
 
     # -- motion (mirrors CharacterController.Move) ---------------------------
-    def move(self, position, velocity, delta_time, radius, height):
+    def move(self, position, motion, radius, height):
         # The CharacterController's collision volume is the capsule shrunk by the skin width; its
         # bottom sits skinWidth above the visual capsule bottom.
         collision_radius = max(0.01, radius - self.skin_width)
         collision_segment_half = height / 2.0 - radius
         collision_half_height = height / 2.0 - self.skin_width
 
-        motion = velocity * delta_time
+        # The requested motion is the one that decides whether the controller may snap down onto a
+        # surface; the per-contact projection below rewrites `motion`, so remember it first.
+        descending = motion.y <= 0.0
+
         target = position + motion
 
         # 1. Depenetration: push the capsule out of anything it overlaps. This is what lets the
@@ -374,7 +399,7 @@ class World(object):
         # 4. Vertical: stop at the surface when moving down, snap when following a slope. The capsule
         #    is placed tangent to the surface plane, so on a slope it rides higher than on flat
         #    ground.
-        if velocity.y <= 0.0:
+        if descending:
             surface = self.top_surface(target.x, target.z)
             if surface is not None:
                 height, normal = surface
@@ -428,7 +453,8 @@ class PlayerConfig(object):
 class Player(object):
     """Line-by-line mirror of the C# controller (see the script header for the mapping)."""
 
-    def __init__(self, config, world, position, yaw, radius=0.5, height=2.0, skin_width=0.08):
+    def __init__(self, config, world, position, yaw, radius=0.5, height=2.0, skin_width=0.08,
+                 min_move_distance=0.001):
         self.config = config
         self.world = world
         self.position = position
@@ -436,9 +462,14 @@ class Player(object):
         self.radius = radius
         self.height = height
         self.skin_width = skin_width
+        self.min_move_distance = min_move_distance   # CharacterController.minMoveDistance
 
         self.planar_velocity = Vec3(0, 0, 0)
         self.vertical_velocity = 0.0
+
+        # Mirrors ThirdPersonPlayerController.SkippedMotionFrames / the engine calls it makes.
+        self.move_calls = 0
+        self.skipped_motion_frames = 0
 
         # Collision capsule geometry (CharacterController shrinks the capsule by the skin width).
         self.probe_radius = max(0.01, radius - skin_width)
@@ -491,6 +522,9 @@ class Player(object):
             if not self.was_grounded:
                 self.just_landed = True
                 self.last_landing_impact_speed = max(0.0, -self.vertical_velocity)
+            # Re-armed from any fall and from every landing. It stays exactly zero only in the
+            # state ResetMovementState() leaves behind, where the motion guard in step 5 skips the
+            # engine call (a zero-length motion would assert IsNormalized(dir, 0.001f)).
             if self.vertical_velocity < 0.0:
                 self.vertical_velocity = -abs(self.config.ground_stick_force)
         else:
@@ -501,7 +535,17 @@ class Player(object):
 
         # 5. Apply the motion.
         velocity = self.planar_velocity + UP * self.vertical_velocity
-        self.position = self.world.move(self.position, velocity, delta_time, self.radius, self.height)
+        motion = velocity * delta_time
+
+        # PhysicsQueryGuard.IsUsableMotion: CharacterController.Move normalizes its motion, so a
+        # zero-length vector (or one shorter than minMoveDistance, which Move ignores anyway) must
+        # never reach the engine - it would assert "IsNormalized(dir, 0.001f)".
+        if not usable_motion(motion, self.min_move_distance):
+            self.skipped_motion_frames += 1
+            return
+
+        self.move_calls += 1
+        self.position = self.world.move(self.position, motion, self.radius, self.height)
 
     # -- internals -----------------------------------------------------------
     def _resolve_move_direction(self, move_input, camera_forward, camera_right):
@@ -649,6 +693,51 @@ def test_grounded_at_spawn(report, player, camera):
     report.check(player.is_grounded and stable,
                  "Stable while idle for 30 frames (y=%.3f)" % player.position.y,
                  "player drifted or left the ground while idle (y=%.3f)" % player.position.y)
+
+
+def test_idle_motion_integrity(report, player, camera):
+    """Regression check for Unity's "Assertion failed on expression: 'IsNormalized(dir, 0.001f)'".
+
+    Every teleport in the in-Editor suite calls ResetMovementState(), which zeroes both velocities.
+    Idle on the ground the controller must either hand CharacterController.Move a usable motion
+    (the ground stick has to re-arm from zero) or skip the engine call - it must never pass a
+    zero-length vector, which Move normalizes to zero before Unity asserts on it.
+    """
+    player.position = Vec3(0, 1, 8)
+    player.yaw = 180.0
+    player.reset_movement_state()
+    settle(player, camera, 12)
+
+    grounded_before = player.is_grounded
+    move_calls_before = player.move_calls
+    skipped_before = player.skipped_motion_frames
+
+    zero_motion_frames = 0
+    for _ in range(60):
+        previous_skips = player.skipped_motion_frames
+        player.update(1.0 / 60.0, (0.0, 0.0), camera.planar_forward, camera.planar_right)
+
+        velocity = player.planar_velocity + UP * player.vertical_velocity
+        if velocity.sqr_magnitude <= 1e-12 and player.skipped_motion_frames == previous_skips:
+            zero_motion_frames += 1
+
+    report.check(zero_motion_frames == 0,
+                 "Idle motion: 60 idle frames after a movement reset never handed Move a zero-length vector "
+                 "(%d engine call(s), %d skipped)" % (player.move_calls - move_calls_before,
+                                                      player.skipped_motion_frames - skipped_before),
+                 "Idle motion: %d frame(s) handed CharacterController.Move a zero-length vector; Unity asserts "
+                 "IsNormalized(dir, 0.001f) on each of them" % zero_motion_frames)
+
+    report.check(player.skipped_motion_frames > skipped_before,
+                 "Idle motion: the degenerate zero-length motion (%d frame(s)) is detected and skipped instead of "
+                 "being passed to the engine" % (player.skipped_motion_frames - skipped_before),
+                 "Idle motion: the zero-length motion was never detected; it reached CharacterController.Move and "
+                 "Unity asserted IsNormalized(dir, 0.001f)")
+
+
+    report.check(grounded_before and player.is_grounded,
+                 "Idle motion: grounded before and after the idle window (y=%.3f)" % player.position.y,
+                 "Idle motion: player left the ground during the idle window (y=%.3f)" % player.position.y)
 
 
 def test_directional_movement(report, player, camera, config, label, world_direction):
@@ -1014,6 +1103,9 @@ def main():
 
     print("\n=== Ground detection ===")
     test_grounded_at_spawn(report, player, camera)
+
+    print("\n=== Idle motion integrity (no zero-length CharacterController.Move) ===")
+    test_idle_motion_integrity(report, player, camera)
 
     print("\n=== Directional movement (camera yaw 180 deg) ===")
     test_directional_movement(report, player, camera, config, "Forward", Vec3(0, 0, -1))
