@@ -41,7 +41,7 @@ Assets/
 | Scene | Build index | Content |
 | --- | --- | --- |
 | `Assets/Scenes/BootScene.unity` | 0 (startup) | Main Camera (skybox clear, HDR, post-processing on) + Directional Light |
-| `Assets/Scenes/TestScene.unity` | 1 | Empty |
+| `Assets/Scenes/TestScene.unity` | 1 | Input architecture diagnostics only (no player or gameplay) |
 
 Both scenes are registered and enabled in `ProjectSettings/EditorBuildSettings.asset`.
 `Assets/Scenes` is the home for future gameplay scenes.
@@ -118,7 +118,17 @@ all 32 layers colliding (the collision matrix is intentionally untouched — gam
 ## Input
 
 `com.unity.inputsystem` is installed and **Active Input Handling = Both** (new Input System and the
-legacy Input Manager both work). No `.inputactions` asset is shipped — input maps are gameplay work.
+legacy Input Manager both work). `Assets/Resources/Input/GameInputActions.inputactions` defines the
+reusable `Gameplay` action map: `Move`, `Look`, `LightAttack`, `HeavyAttack`, `Dodge`, `Ability1`,
+`Ability2`, `Ability3`, `Ultimate`, and `Interact`. Keyboard/mouse test bindings use WASD/arrows,
+mouse delta, left/right mouse buttons, Space, 1/2/3, R, and E.
+
+`MobileGame.Input.GameInput` self-bootstraps and exposes the shared move/look vectors, button state,
+and performed/released events. Future mobile controls can provide virtual-stick values and button
+edges through `SetMobileMove`, `SetMobileLook`, and `SetMobileButton`; no mobile UI or gameplay is
+included. `TestScene` contains only `InputArchitectureTest`: enter Play Mode, run its
+**Verify: Gameplay Input Actions** context menu, and use the mapped controls to see detected input
+in Console. The monitor is diagnostic only; it does not move a character or implement combat.
 
 ## Player settings
 
@@ -131,7 +141,7 @@ for Android/iOS, Android min API **24**, target API **35**, **ARM64** only.
 1. Open the project with Unity 6 (6000.0.x) — the Console must be empty after the first import.
 2. Open `Assets/Scenes/BootScene.unity` and press **Play** — skybox, camera and directional light
    are visible, no errors or warnings.
-3. Open `Assets/Scenes/TestScene.unity` and press **Play** — empty scene loads without errors.
+3. Open `Assets/Scenes/TestScene.unity` and press **Play** — the input diagnostic reports that it is listening; run **Verify: Gameplay Input Actions** on `InputArchitectureTest`, then try every mapped keyboard/mouse control. No errors should appear.
 4. With `BootScene` open, press **Play**, select the auto-created `GraphicsQualityManager` object
    and run its **Verify: Cycle Tiers + Reload Scenes** context menu — the Console must show the
    Low → Medium → High cycle plus both scene loads with no errors, ending in `VERIFICATION PASSED`.
