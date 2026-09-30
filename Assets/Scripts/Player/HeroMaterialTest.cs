@@ -21,8 +21,9 @@ namespace MobileGame.Player
     /// <item>All roles share one shader keyword set, so the hero stays in a single SRP Batcher variant.</item>
     /// <item>The hero reads under three lighting setups - bright key, dim warm key and cool key - measured by
     ///       rendering the hero off-screen and comparing hero-pixel luminance and contrast.</item>
-    /// <item>Nothing gameplay-related changed: the visual carries no colliders and no animation components,
-    ///       and the CharacterController and controller script are still enabled.</item>
+    /// <item>Nothing gameplay-related changed: the visual carries no colliders and no gameplay components,
+    ///       the rig's Animator applies no root motion, and the CharacterController and controller script
+    ///       are still enabled.</item>
     /// </list>
     /// </para>
     ///
@@ -152,10 +153,12 @@ namespace MobileGame.Player
             PlayerControllerTest playerTest = FindFirstObjectByType<PlayerControllerTest>();
             UI.VirtualJoystickTest joystickTest = FindFirstObjectByType<UI.VirtualJoystickTest>();
             UI.TouchCameraControlTest touchTest = FindFirstObjectByType<UI.TouchCameraControlTest>();
+            HeroRigTest rigTest = FindFirstObjectByType<HeroRigTest>();
 
             float waited = 0f;
             while (((playerTest != null && playerTest.IsRunning) ||
                     (joystickTest != null && joystickTest.IsRunning) ||
+                    (rigTest != null && rigTest.IsRunning) ||
                     (touchTest != null && touchTest.IsRunning)) &&
                    waited < MaxWaitForOtherSuiteSeconds)
             {
@@ -540,6 +543,16 @@ namespace MobileGame.Player
                 problems.Add("unexpected component in the visual: " + behaviour.GetType().Name);
             }
 
+            // The only animation component allowed inside the visual is the rig's own Animator, and it
+            // must never drive the root transform - the CharacterController owns that.
+            foreach (Animator animator in root.GetComponentsInChildren<Animator>(true))
+            {
+                if (animator.transform.parent != root)
+                    problems.Add("the rig Animator is not on the visual's skeleton root");
+                else if (animator.applyRootMotion)
+                    problems.Add("the rig Animator applies root motion, fighting the CharacterController");
+            }
+
             var controller = visual.GetComponent<CharacterController>();
             if (controller == null || !controller.enabled)
                 problems.Add("the CharacterController is missing or disabled");
@@ -552,9 +565,9 @@ namespace MobileGame.Player
                 problems.Add("ThirdPersonPlayerController is missing or disabled");
 
             Check(problems.Count == 0,
-                "[12/13] Gameplay untouched - visual-only change (no colliders or animation components in the " +
-                "visual, CharacterController and controller script intact)" +
-                (problems.Count > 0 ? " | " + string.Join("; ", problems) : string.Empty));
+                "[12/13] Gameplay untouched - no colliders and no gameplay components in the visual, the rig " +
+                "Animator sits on the skeleton root with root motion off, CharacterController and controller " +
+                "script intact" + (problems.Count > 0 ? " | " + string.Join("; ", problems) : string.Empty));
         }
 
         private IEnumerator TestReadabilityUnderLighting(Transform heroRoot, Renderer[] renderers, HeroCharacterVisual visual)
