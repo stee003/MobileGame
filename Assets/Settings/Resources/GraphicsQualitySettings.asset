@@ -1,0 +1,46 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {{fileID: 0}}
+  m_PrefabInstance: {{fileID: 0}}
+  m_PrefabAsset: {{fileID: 0}}
+  m_GameObject: {{fileID: 0}}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {{fileID: 11500000, guid: a386dc61b5742532164fe8c5c27e206f, type: 3}}
+  m_Name: GraphicsQualitySettings
+  m_EditorClassIdentifier: 
+  prefsKey: MobileGame.GraphicsQuality
+  defaultTier: 1
+  low:
+    displayName: Low
+    volumeProfile: {{fileID: 11400000, guid: d8189c96665e986431e843fcfd4ce8a4, type: 2}}
+    bloomIntensity: 0
+    bloomHighQualityFiltering: 0
+    vignetteIntensity: 0.25
+    enableFilmGrain: 0
+    reflectionResolution: 128
+    particleBudgetMultiplier: 0.75
+    targetFrameRate: 60
+  medium:
+    displayName: Medium
+    volumeProfile: {{fileID: 11400000, guid: bce01e43596dbf7ca49b8f068066da90, type: 2}}
+    bloomIntensity: 0.45
+    bloomHighQualityFiltering: 0
+    vignetteIntensity: 0.25
+    enableFilmGrain: 0
+    reflectionResolution: 256
+    particleBudgetMultiplier: 1
+    targetFrameRate: 60
+  high:
+    displayName: High
+    volumeProfile: {{fileID: 11400000, guid: b9595ce4e999cff365df75b8cdbb437c, type: 2}}
+    bloomIntensity: 0.65
+    bloomHighQualityFiltering: 1
+    vignetteIntensity: 0.3
+    enableFilmGrain: 1
+    reflectionResolution: 512
+    particleBudgetMultiplier: 1.25
+    targetFrameRate: 60
