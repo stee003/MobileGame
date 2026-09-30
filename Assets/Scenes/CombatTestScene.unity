@@ -3548,8 +3548,9 @@ GameObject:
   - component: {fileID: 100163}
   - component: {fileID: 100164}
   - component: {fileID: 100165}
+  - component: {fileID: 100167}
   m_Layer: 8
-  m_Name: PlaceholderPlayer
+  m_Name: Player
   m_TagString: Player
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -3658,14 +3659,38 @@ MonoBehaviour:
   m_GameObject: {fileID: 100160}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a3d22436282f47e287bc93e6e2fe7f0d, type: 3}
+  m_Script: {fileID: 11500000, guid: 0511402c80e134ed41502c37bf70f4ac, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   targetCamera: {fileID: 100155}
   moveSpeed: 6
-  turnSpeed: 720
-  jumpHeight: 1.2
+  acceleration: 30
+  deceleration: 45
+  rotationSpeed: 720
+  minSpeedToRotate: 0.1
   gravity: 20
+  maxFallSpeed: 30
+  groundStickForce: 2
+  groundLayers:
+    serializedVersion: 2
+    m_Bits: 147457
+  groundCheckDistance: 0.15
+  maxSlopeAngle: 45
+--- !u!114 &100167
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 100160}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0354d68d4f31f43a4144f2e4ec63c46c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  player: {fileID: 100165}
+  thirdPersonCamera: {fileID: 100155}
+  runOnStart: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

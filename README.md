@@ -52,13 +52,13 @@ All scenes are registered and enabled in `ProjectSettings/EditorBuildSettings.as
 `CombatTestScene` is a development-only outdoor arena used to develop and verify **movement,
 camera, combat and animations** before any city content exists.
 
-The scene features the reusable **third-person camera system** and a temporary capsule placeholder
-target:
+The scene features the reusable **third-person camera system** and a temporary capsule player:
 
-* **Placeholder player target** — a temporary capsule object (`PlaceholderPlayer`) tagged `Player`
-  at (0, 1, 8) with `CharacterController` and `PlaceholderPlayerController` (WASD locomotion,
-  camera-relative heading, gravity, and jump). This is explicitly a temporary placeholder for
-  camera verification, not the final player character.
+* **Player** — a temporary capsule object (`Player`, tagged `Player`, on the `Player` layer) at
+  (0, 1, 8) with a `CharacterController` (height 2 m, radius 0.5 m, skin width 0.08 m, slope limit
+  45°, step offset 0.3 m) and `ThirdPersonPlayerController`. This is explicitly a temporary
+  placeholder for verifying movement and camera behaviour, not the final player character — see
+  *Player controller* below.
 * **ThirdPersonCamera** (`Assets/Scripts/Camera/ThirdPersonCamera.cs`) — reusable, decoupled camera
   rig attached to `Main Camera`:
   * Third-person target follow with adjustable pivot height/offset (default 1.6 m).
@@ -81,6 +81,52 @@ target:
   * **Architecture** — four pillars, one tall monolith block, an archway and three low cover blocks.
   * **Height variation** — stepped platform (east), ramp-up platform (west), and three-tier ziggurat (north).
   * **PlayerSpawn** — empty marker tagged `SpawnPoint` at (0, 0, 8), facing the arena center.
+
+## Player controller
+
+`ThirdPersonPlayerController` (`Assets/Scripts/Player/ThirdPersonPlayerController.cs`) is the basic
+third-person locomotion controller. Its scope is deliberately limited to movement: no combat,
+attacks, abilities, dodge, stamina or health.
+
+* **Camera-relative movement** — input is mapped through the planar forward/right vectors of
+  `ThirdPersonCamera` (auto-found, or `Camera.main` / this transform as a fallback), so W/A/S/D and
+  the arrow keys always move relative to where the camera looks. Diagonals are clamped to unit
+  length so they are never faster than straight movement.
+* **Acceleration and deceleration** — the planar velocity moves toward the target velocity at
+  `acceleration` m/s² while input is held and toward zero at `deceleration` m/s² when it is
+  released. `Vector3.MoveTowards` guarantees the speed never overshoots the target or reverses.
+* **Rotation toward movement direction** — the capsule turns toward its current horizontal velocity
+  at `rotationSpeed` degrees per second (rate limited, never snapping) once it moves faster than
+  `minSpeedToRotate`.
+* **Gravity** — downward acceleration with a `maxFallSpeed` terminal velocity, plus a small
+  `groundStickForce` while grounded so the capsule follows slopes and stairs instead of bouncing.
+* **Ground detection** — a sphere probe below the capsule (inset by the CharacterController's skin
+  width so it never starts inside geometry) against configurable `groundLayers`, rejecting surfaces
+  steeper than `maxSlopeAngle` and falling back to `CharacterController.isGrounded` when the probe
+  cannot see the surface. Landing and leaving-the-ground are exposed as `JustLanded` /
+  `JustBecameAirborne`, and `LastLandingImpactSpeed` reports the impact speed.
+* **Inspector configuration** — movement speed, acceleration, deceleration, rotation speed,
+  gravity, terminal fall speed, ground stick force, ground layers, ground check distance, maximum
+  slope angle and the camera reference. Read-only state (`Speed`, `VerticalSpeed`, `IsGrounded`,
+  `GroundNormal`, `SlopeAngle`, `GroundDistance`) is exposed as properties for animation, audio and
+  diagnostics.
+
+Input comes from the shared `MobileGame.Input.GameInput` facade, so the future mobile virtual stick
+feeds the same controller through `SetMobileMove` without any change to this script.
+
+`PlayerControllerTest` (`Assets/Scripts/Player/PlayerControllerTest.cs`) is the Play Mode
+verification suite for the controller: it drives the player through the input facade and checks
+wiring, grounded-at-spawn, forward/backward/left/right movement, camera-relative movement,
+acceleration, deceleration, rotation toward movement, gravity/falling/landing and slope traversal.
+It runs automatically on Start in Play Mode (or via its **Verify: Run Player Controller Test
+Suite** context menu) and reports `VERIFICATION PASSED` for all 14 checks. The suite teleports the
+capsule around the arena while it runs (about 20 s of game time) and returns it to the spawn point
+at (0, 1, 8) when it finishes; set `Run On Start` to false on the component if you would rather
+trigger it by hand.
+
+A headless mirror of the same suite lives in
+`Tools/PlayerMovementVerification/simulate_player_movement.py`; see
+`Tools/PlayerMovementVerification/REPORT.md` for the recorded results.
 
 ## Rendering (URP 17.0.4)
 
@@ -182,12 +228,23 @@ for Android/iOS, Android min API **24**, target API **35**, **ARM64** only.
    and run its **Verify: Cycle Tiers + Reload Scenes** context menu — the Console must show the
    Low → Medium → High cycle plus both scene loads with no errors, ending in `VERIFICATION PASSED`.
 5. Open `Assets/Scenes/CombatTestScene.unity` and press **Play**:
-   * The third-person camera frames the placeholder capsule target at the default distance (5 m) and height (1.6 m) with zero Console errors.
+   * The third-person camera frames the temporary capsule player at the default distance (5 m) and height (1.6 m) with zero Console errors.
    * `CameraSystemTest` runs automatically on Start (or via its **Verify: Run Camera Test Suite** context menu), reporting `VERIFICATION PASSED`.
+   * `PlayerControllerTest` runs automatically on Start (or via its **Verify: Run Player Controller Test Suite** context menu), reporting `VERIFICATION PASSED` for all 14 checks.
    * **Moving around the arena**: WASD / arrow keys move the capsule around the arena, up the ramp, and onto platforms; the camera follows smoothly without jitter.
+   * **Acceleration and stopping**: hold a direction and the capsule ramps up to 6 m/s in about 0.2 s; release the key and it comes to rest in about 0.13 s without sliding past the intended stop point.
+   * **Facing**: the capsule turns toward the direction it is walking in at 720 deg/s.
    * **Rotating horizontally**: move the mouse left/right; the camera orbits smoothly around the capsule.
    * **Looking up**: push mouse forward/up; view tilts up and clamps smoothly at -35°.
    * **Looking down**: pull mouse backward/down; view tilts down and clamps smoothly at +70°.
    * **Adjusting distance**: roll the mouse scroll wheel to zoom the camera smoothly between 1.5 m and 10 m.
    * **Camera collision**: walk behind the perimeter walls, monolith, pillars, or archway; the camera pushes forward smoothly to prevent clipping into geometry, and eases back out when clear.
+   * **Slopes**: walk up `Ramp_West` (13.5°) and onto `Platform_West`, then back down; the capsule stays glued to the ramp the whole way.
+   * **Falling and landing**: walk off `Platform_West` (1.2 m) or the east platform (1.6 m); the capsule falls, reports `JustLanded`, and settles on the floor.
+   * **Collisions**: walk into the monolith, pillars or perimeter walls; the capsule stops at the surface instead of passing through.
    * **Cursor lock**: click into the game view to lock the mouse; press Escape to unlock.
+
+Note: the ziggurat's 0.6 m tier steps are taller than the `CharacterController`'s 0.3 m step
+offset, so the capsule cannot climb them; the stepped platform on the east side (0.4 m steps) has
+the same limitation. Both are properties of the temporary `CharacterController` on the placeholder
+capsule, not of the player controller script.
