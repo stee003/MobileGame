@@ -9,39 +9,70 @@ namespace MobileGame.Player
     ///
     /// Design notes (original, not copied from any existing franchise):
     /// - Athletic broad-shoulder, tapered waist silhouette for instant hero read
-    /// - Deep midnight-teal bodysuit with electric-cyan chest chevron and gold belt
-    /// - Short half-cape, angular shoulder armor, white boots/gloves, visor
-    /// - Compact swept-crest hairstyle (fade sides, single forward peak) – distinctive but not MHA
+    /// - Deep midnight-teal bodysuit with electric-cyan chest chevron and a brass belt
+    /// - Short half-cape, angular shoulder armor, light boots/gloves, cyan visor
+    /// - Compact swept-crest hairstyle (fade sides, single forward peak)
     /// - Humanoid proportions, separate head/hands/feet, low-poly mobile friendly
     ///
+    /// Materials (see <see cref="HeroMaterials"/>):
+    /// - Seven PBR roles - skin, hair, primary costume, secondary costume, boots, gloves, metal -
+    ///   each with base colour + normal + channel-packed metallic/occlusion/smoothness maps.
+    /// - Assigned from this component's Inspector fields, or a <c>Resources/HeroMaterials</c> set,
+    ///   and only if both are missing generated procedurally, so the hero never renders as
+    ///   flat-shaded colour blocks.
+    ///
     /// Optimization for mobile:
-    /// - ~3.2k triangles total (1 head sphere + cubes + 4 capsules)
-    /// - 5 materials (Suit / Accent / Skin / Hair / Boots/Belt) – SRP Batcher compatible
+    /// - Primitive-based, ~3.5k triangles (one sphere, eight capsules, one cylinder, boxes)
+    /// - Seven materials, SRP Batcher and GPU instancing compatible
     /// - No SkinnedMeshRenderer, no blendshapes, no extra colliders
-    /// - GPU instancing enabled where possible, shadows on, receive shadows on
-    /// - Visual root is a simple child; CharacterController remains sole physics shape
+    /// - Shadows cast and received, per-object motion vectors
+    /// - Visual root is a simple child; the CharacterController remains the sole physics shape
     /// - Feet soles sit exactly at model origin so they rest on ground (no floating)
     /// </summary>
     [DisallowMultipleComponent]
     [DefaultExecutionOrder(-50)] // Build before PlayerController Awake
     public class HeroCharacterVisual : MonoBehaviour
     {
-        [Header("Material Overrides (optional)")]
-        [Tooltip("If assigned, these materials are used. Otherwise procedural URP Lit materials are created at runtime.")]
-        [SerializeField] private Material suitMaterial;
-        [SerializeField] private Material accentMaterial;
+        [Header("Hero Materials - 7 PBR roles (optional)")]
+        [Tooltip("Skin: head, neck, jaw, ears. Authored as Assets/Art/Materials/Hero/M_Hero_Skin.mat.")]
         [SerializeField] private Material skinMaterial;
+        [Tooltip("Hair: hair pieces plus brows and dark eye slits. M_Hero_Hair.mat.")]
         [SerializeField] private Material hairMaterial;
+        [Tooltip("Primary costume: bodysuit, leggings, sleeves, shoulder armour, cape. M_Hero_Suit.mat.")]
+        [SerializeField] private Material suitMaterial;
+        [Tooltip("Secondary costume: cyan trim, visor, hip accents, belt gem, emblem inlay. M_Hero_Accent.mat.")]
+        [SerializeField] private Material accentMaterial;
+        [Tooltip("Boots and boot cuffs (warm bone leather). M_Hero_Boots.mat.")]
         [SerializeField] private Material bootsMaterial;
-        [SerializeField] private Material beltMaterial;
+        [Tooltip("Gloves, cuffs and knuckle pads (cool light grip leather). M_Hero_Gloves.mat.")]
+        [SerializeField] private Material glovesMaterial;
+        [Tooltip("Metallic details: belt, buckle, emblem ring, visor bolts, boot straps. M_Hero_Metal.mat.")]
+        [SerializeField] private Material metalMaterial;
 
         [Header("Visual Tuning")]
         [Tooltip("Vertical offset of the visual root relative to the CharacterController center. -1 places feet at ground when controller center is 0.")]
         [SerializeField] private float verticalOffset = -1f;
 
+        [Tooltip("Logs which material set the hero resolved to (authored, Resources or procedural).")]
+        [SerializeField] private bool logMaterialResolution = true;
+
         private const string VisualRootName = "HeroVisual";
+        private bool m_FallbackLogged;
         private Transform m_visualRoot;
+        private HeroMaterials.Set m_materials;
         private bool m_built;
+
+        /// <summary>The seven resolved hero materials, indexed by role.</summary>
+        public HeroMaterials.Set Materials => m_materials;
+
+        /// <summary>Root of the generated visual hierarchy (null before the hero is built).</summary>
+        public Transform VisualRoot => m_visualRoot;
+
+        /// <summary>Material of one role, or null when the hero has not been built yet.</summary>
+        public Material GetMaterial(HeroMaterialRole role)
+        {
+            return m_materials != null ? m_materials[role] : null;
+        }
 
         private void Awake()
         {
@@ -55,18 +86,8 @@ namespace MobileGame.Player
             // In edit mode OnEnable is called often; guard against duplicate builds.
             if (!Application.isPlaying)
             {
-                // Delay a frame in editor to avoid building during serialization
-                // but for now build immediately if missing.
                 BuildIfNeeded();
                 HidePlaceholderIfNeeded();
-            }
-        }
-
-        private void OnValidate()
-        {
-            if (!Application.isPlaying && m_visualRoot == null)
-            {
-                // Don't auto-build on validate to avoid spam, just ensure placeholder hidden
             }
         }
 #endif
@@ -76,11 +97,13 @@ namespace MobileGame.Player
             if (m_built && m_visualRoot != null)
                 return;
 
-            // Prevent duplicate visual root
+            // Prevent duplicate visual root (for example when the scene was saved from edit mode,
+            // where the hierarchy already exists).
             Transform existing = transform.Find(VisualRootName);
             if (existing != null)
             {
                 m_visualRoot = existing;
+                EnsureMaterials(); // keep the role set valid for diagnostics even when nothing is rebuilt
                 m_built = true;
                 HidePlaceholderIfNeeded();
                 return;
@@ -96,97 +119,44 @@ namespace MobileGame.Player
         {
             // The original placeholder is a MeshFilter + MeshRenderer directly on the Player.
             // We disable them so only the hero is visible, but keep them for reference.
-            var mf = GetComponent<MeshFilter>();
             var mr = GetComponent<MeshRenderer>();
             if (mr != null)
                 mr.enabled = false;
-            // Keep MeshFilter but it won't render without renderer.
-            // Optionally disable to save draw, but not required.
         }
 
         private void EnsureMaterials()
         {
-            Shader lit = Shader.Find("Universal Render Pipeline/Lit");
-            if (lit == null)
-                lit = Shader.Find("Standard"); // fallback
+            var sources = new Material[HeroMaterials.RoleCount];
+            sources[(int)HeroMaterialRole.Skin] = skinMaterial;
+            sources[(int)HeroMaterialRole.Hair] = hairMaterial;
+            sources[(int)HeroMaterialRole.Suit] = suitMaterial;
+            sources[(int)HeroMaterialRole.Accent] = accentMaterial;
+            sources[(int)HeroMaterialRole.Boots] = bootsMaterial;
+            sources[(int)HeroMaterialRole.Gloves] = glovesMaterial;
+            sources[(int)HeroMaterialRole.Metal] = metalMaterial;
 
-            if (suitMaterial == null)
+            int assigned = 0;
+            for (int i = 0; i < sources.Length; i++)
             {
-                suitMaterial = new Material(lit);
-                suitMaterial.name = "M_Hero_Suit_Runtime";
-                suitMaterial.SetColor("_BaseColor", new Color(0.078f, 0.196f, 0.353f, 1f));
-                suitMaterial.SetColor("_Color", new Color(0.078f, 0.196f, 0.353f, 1f));
-                suitMaterial.SetFloat("_Smoothness", 0.35f);
-                suitMaterial.SetFloat("_Metallic", 0f);
-                suitMaterial.enableInstancing = true;
-            }
-            if (accentMaterial == null)
-            {
-                accentMaterial = new Material(lit);
-                accentMaterial.name = "M_Hero_Accent_Runtime";
-                accentMaterial.SetColor("_BaseColor", new Color(0.09f, 0.78f, 0.92f, 1f));
-                accentMaterial.SetColor("_Color", new Color(0.09f, 0.78f, 0.92f, 1f));
-                accentMaterial.SetFloat("_Smoothness", 0.55f);
-                accentMaterial.SetFloat("_Metallic", 0f);
-                accentMaterial.enableInstancing = true;
-            }
-            if (skinMaterial == null)
-            {
-                skinMaterial = new Material(lit);
-                skinMaterial.name = "M_Hero_Skin_Runtime";
-                skinMaterial.SetColor("_BaseColor", new Color(0.91f, 0.77f, 0.66f, 1f));
-                skinMaterial.SetColor("_Color", new Color(0.91f, 0.77f, 0.66f, 1f));
-                skinMaterial.SetFloat("_Smoothness", 0.35f);
-                skinMaterial.enableInstancing = true;
-            }
-            if (hairMaterial == null)
-            {
-                hairMaterial = new Material(lit);
-                hairMaterial.name = "M_Hero_Hair_Runtime";
-                hairMaterial.SetColor("_BaseColor", new Color(0.102f, 0.118f, 0.18f, 1f));
-                hairMaterial.SetColor("_Color", new Color(0.102f, 0.118f, 0.18f, 1f));
-                hairMaterial.SetFloat("_Smoothness", 0.45f);
-                hairMaterial.enableInstancing = true;
-            }
-            if (bootsMaterial == null)
-            {
-                bootsMaterial = new Material(lit);
-                bootsMaterial.name = "M_Hero_Boots_Runtime";
-                bootsMaterial.SetColor("_BaseColor", new Color(0.92f, 0.93f, 0.95f, 1f));
-                bootsMaterial.SetColor("_Color", new Color(0.92f, 0.93f, 0.95f, 1f));
-                bootsMaterial.SetFloat("_Smoothness", 0.5f);
-                bootsMaterial.enableInstancing = true;
-            }
-            if (beltMaterial == null)
-            {
-                beltMaterial = new Material(lit);
-                beltMaterial.name = "M_Hero_Belt_Runtime";
-                beltMaterial.SetColor("_BaseColor", new Color(0.96f, 0.78f, 0.29f, 1f));
-                beltMaterial.SetColor("_Color", new Color(0.96f, 0.78f, 0.29f, 1f));
-                beltMaterial.SetFloat("_Smoothness", 0.75f);
-                beltMaterial.SetFloat("_Metallic", 0.7f);
-                beltMaterial.enableInstancing = true;
+                if (sources[i] != null)
+                    assigned++;
             }
 
-            // Try to use authored assets if available (editor only)
-#if UNITY_EDITOR
-            TryReplaceWithAuthored(ref suitMaterial, "Assets/Art/Materials/Hero/M_Hero_Suit.mat");
-            TryReplaceWithAuthored(ref accentMaterial, "Assets/Art/Materials/Hero/M_Hero_Accent.mat");
-            TryReplaceWithAuthored(ref skinMaterial, "Assets/Art/Materials/Hero/M_Hero_Skin.mat");
-            TryReplaceWithAuthored(ref hairMaterial, "Assets/Art/Materials/Hero/M_Hero_Hair.mat");
-            TryReplaceWithAuthored(ref bootsMaterial, "Assets/Art/Materials/Hero/M_Hero_Boots.mat");
-            TryReplaceWithAuthored(ref beltMaterial, "Assets/Art/Materials/Hero/M_Hero_Belt.mat");
-#endif
+            bool usedFallback;
+            m_materials = HeroMaterials.Resolve(sources, out usedFallback);
+
+            // Resolved materials are deliberately NOT written back into the serialized fields: a
+            // procedurally generated material has no asset behind it, so storing it in the scene
+            // would only create a fake reference that is null again on the next load.
+            if (usedFallback && logMaterialResolution && !m_FallbackLogged)
+            {
+                m_FallbackLogged = true;
+                Debug.Log("[HeroCharacterVisual] " + assigned + "/" + HeroMaterials.RoleCount +
+                          " hero materials came from the Inspector or Resources/HeroMaterials; the rest were " +
+                          "generated procedurally. Assign the authored set from " + HeroMaterials.AssetFolder +
+                          " for full PBR fidelity.", this);
+            }
         }
-
-#if UNITY_EDITOR
-        private void TryReplaceWithAuthored(ref Material runtime, string path)
-        {
-            var authored = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(path);
-            if (authored != null)
-                runtime = authored;
-        }
-#endif
 
         private void CreateVisualHierarchy()
         {
@@ -201,149 +171,132 @@ namespace MobileGame.Player
             // ------------------------------------------------------------------
             // Lower body - feet & legs (feet soles at y=0)
             // ------------------------------------------------------------------
-            // Feet (boots) - cubes, bottom at 0
-            CreateCube("Foot_L", new Vector3(-0.13f, 0.06f, 0.05f), new Vector3(0.14f, 0.12f, 0.28f), Quaternion.identity, bootsMaterial, m_visualRoot);
-            CreateCube("Foot_R", new Vector3(0.13f, 0.06f, 0.05f), new Vector3(0.14f, 0.12f, 0.28f), Quaternion.identity, bootsMaterial, m_visualRoot);
+            // Boots (bone leather) - cubes, bottom at 0
+            Part(PrimitiveType.Cube, "Foot_L", new Vector3(-0.13f, 0.06f, 0.05f), new Vector3(0.14f, 0.12f, 0.28f), Quaternion.identity, HeroMaterialRole.Boots);
+            Part(PrimitiveType.Cube, "Foot_R", new Vector3(0.13f, 0.06f, 0.05f), new Vector3(0.14f, 0.12f, 0.28f), Quaternion.identity, HeroMaterialRole.Boots);
 
             // Boot cuffs (wrap around ankle)
-            CreateCube("BootCuff_L", new Vector3(-0.13f, 0.18f, 0f), new Vector3(0.18f, 0.14f, 0.20f), Quaternion.identity, bootsMaterial, m_visualRoot);
-            CreateCube("BootCuff_R", new Vector3(0.13f, 0.18f, 0f), new Vector3(0.18f, 0.14f, 0.20f), Quaternion.identity, bootsMaterial, m_visualRoot);
+            Part(PrimitiveType.Cube, "BootCuff_L", new Vector3(-0.13f, 0.18f, 0f), new Vector3(0.18f, 0.14f, 0.20f), Quaternion.identity, HeroMaterialRole.Boots);
+            Part(PrimitiveType.Cube, "BootCuff_R", new Vector3(0.13f, 0.18f, 0f), new Vector3(0.18f, 0.14f, 0.20f), Quaternion.identity, HeroMaterialRole.Boots);
 
-            // Lower legs (shin) - capsules (suit)
-            CreateCapsule("Shin_L", new Vector3(-0.13f, 0.36f, 0f), new Vector3(0.18f, 0.20f, 0.18f), Quaternion.identity, suitMaterial, m_visualRoot);
-            CreateCapsule("Shin_R", new Vector3(0.13f, 0.36f, 0f), new Vector3(0.18f, 0.20f, 0.18f), Quaternion.identity, suitMaterial, m_visualRoot);
+            // Brass straps holding the cuffs - the metal read at boot height
+            Part(PrimitiveType.Cube, "BootStrap_L", new Vector3(-0.13f, 0.245f, 0f), new Vector3(0.19f, 0.022f, 0.21f), Quaternion.identity, HeroMaterialRole.Metal);
+            Part(PrimitiveType.Cube, "BootStrap_R", new Vector3(0.13f, 0.245f, 0f), new Vector3(0.19f, 0.022f, 0.21f), Quaternion.identity, HeroMaterialRole.Metal);
+
+            // Lower legs (shin) - capsules (primary costume)
+            Part(PrimitiveType.Capsule, "Shin_L", new Vector3(-0.13f, 0.36f, 0f), new Vector3(0.18f, 0.20f, 0.18f), Quaternion.identity, HeroMaterialRole.Suit);
+            Part(PrimitiveType.Capsule, "Shin_R", new Vector3(0.13f, 0.36f, 0f), new Vector3(0.18f, 0.20f, 0.18f), Quaternion.identity, HeroMaterialRole.Suit);
 
             // Upper legs (thigh) - capsules
-            CreateCapsule("Thigh_L", new Vector3(-0.13f, 0.72f, 0f), new Vector3(0.22f, 0.20f, 0.22f), Quaternion.identity, suitMaterial, m_visualRoot);
-            CreateCapsule("Thigh_R", new Vector3(0.13f, 0.72f, 0f), new Vector3(0.22f, 0.20f, 0.22f), Quaternion.identity, suitMaterial, m_visualRoot);
+            Part(PrimitiveType.Capsule, "Thigh_L", new Vector3(-0.13f, 0.72f, 0f), new Vector3(0.22f, 0.20f, 0.22f), Quaternion.identity, HeroMaterialRole.Suit);
+            Part(PrimitiveType.Capsule, "Thigh_R", new Vector3(0.13f, 0.72f, 0f), new Vector3(0.22f, 0.20f, 0.22f), Quaternion.identity, HeroMaterialRole.Suit);
 
             // Hips / pelvis
-            CreateCube("Hips", new Vector3(0f, 0.97f, 0f), new Vector3(0.42f, 0.10f, 0.24f), Quaternion.identity, suitMaterial, m_visualRoot);
+            Part(PrimitiveType.Cube, "Hips", new Vector3(0f, 0.97f, 0f), new Vector3(0.42f, 0.10f, 0.24f), Quaternion.identity, HeroMaterialRole.Suit);
 
-            // Accent hip side panels (cyan trim)
-            CreateCube("HipAccent_L", new Vector3(-0.19f, 0.97f, 0.02f), new Vector3(0.04f, 0.10f, 0.25f), Quaternion.identity, accentMaterial, m_visualRoot);
-            CreateCube("HipAccent_R", new Vector3(0.19f, 0.97f, 0.02f), new Vector3(0.04f, 0.10f, 0.25f), Quaternion.identity, accentMaterial, m_visualRoot);
+            // Costume trim down the hip sides (secondary costume)
+            Part(PrimitiveType.Cube, "HipAccent_L", new Vector3(-0.19f, 0.97f, 0.02f), new Vector3(0.04f, 0.10f, 0.25f), Quaternion.identity, HeroMaterialRole.Accent);
+            Part(PrimitiveType.Cube, "HipAccent_R", new Vector3(0.19f, 0.97f, 0.02f), new Vector3(0.04f, 0.10f, 0.25f), Quaternion.identity, HeroMaterialRole.Accent);
 
             // ------------------------------------------------------------------
             // Torso
             // ------------------------------------------------------------------
             // Lower torso / abdomen
-            CreateCube("Abdomen", new Vector3(0f, 1.13f, 0f), new Vector3(0.36f, 0.22f, 0.22f), Quaternion.identity, suitMaterial, m_visualRoot);
+            Part(PrimitiveType.Cube, "Abdomen", new Vector3(0f, 1.13f, 0f), new Vector3(0.36f, 0.22f, 0.22f), Quaternion.identity, HeroMaterialRole.Suit);
             // Chest (broader)
-            CreateCube("Chest", new Vector3(0f, 1.37f, 0f), new Vector3(0.52f, 0.26f, 0.28f), Quaternion.identity, suitMaterial, m_visualRoot);
+            Part(PrimitiveType.Cube, "Chest", new Vector3(0f, 1.37f, 0f), new Vector3(0.52f, 0.26f, 0.28f), Quaternion.identity, HeroMaterialRole.Suit);
 
             // Shoulder pads (angular, part of silhouette)
-            CreateCube("Shoulder_L", new Vector3(-0.31f, 1.50f, 0f), new Vector3(0.16f, 0.10f, 0.22f), Quaternion.Euler(0, 0, -6), suitMaterial, m_visualRoot);
-            CreateCube("Shoulder_R", new Vector3(0.31f, 1.50f, 0f), new Vector3(0.16f, 0.10f, 0.22f), Quaternion.Euler(0, 0, 6), suitMaterial, m_visualRoot);
-            // Shoulder accent strips
-            CreateCube("ShoulderAccent_L", new Vector3(-0.31f, 1.52f, 0.02f), new Vector3(0.14f, 0.03f, 0.23f), Quaternion.identity, accentMaterial, m_visualRoot);
-            CreateCube("ShoulderAccent_R", new Vector3(0.31f, 1.52f, 0.02f), new Vector3(0.14f, 0.03f, 0.23f), Quaternion.identity, accentMaterial, m_visualRoot);
+            Part(PrimitiveType.Cube, "Shoulder_L", new Vector3(-0.31f, 1.50f, 0f), new Vector3(0.16f, 0.10f, 0.22f), Quaternion.Euler(0f, 0f, -6f), HeroMaterialRole.Suit);
+            Part(PrimitiveType.Cube, "Shoulder_R", new Vector3(0.31f, 1.50f, 0f), new Vector3(0.16f, 0.10f, 0.22f), Quaternion.Euler(0f, 0f, 6f), HeroMaterialRole.Suit);
+            // Shoulder accent strips (secondary costume)
+            Part(PrimitiveType.Cube, "ShoulderAccent_L", new Vector3(-0.31f, 1.52f, 0.02f), new Vector3(0.14f, 0.03f, 0.23f), Quaternion.identity, HeroMaterialRole.Accent);
+            Part(PrimitiveType.Cube, "ShoulderAccent_R", new Vector3(0.31f, 1.52f, 0.02f), new Vector3(0.14f, 0.03f, 0.23f), Quaternion.identity, HeroMaterialRole.Accent);
 
-            // Belt
-            CreateCube("Belt", new Vector3(0f, 1.02f, 0f), new Vector3(0.44f, 0.07f, 0.26f), Quaternion.identity, beltMaterial, m_visualRoot);
-            CreateCube("BeltBuckle", new Vector3(0f, 1.02f, 0.15f), new Vector3(0.12f, 0.07f, 0.03f), Quaternion.identity, beltMaterial, m_visualRoot);
-            // Buckle accent (cyan gem)
-            CreateCube("BeltGem", new Vector3(0f, 1.02f, 0.17f), new Vector3(0.06f, 0.04f, 0.015f), Quaternion.identity, accentMaterial, m_visualRoot);
+            // Belt - brass (metal role)
+            Part(PrimitiveType.Cube, "Belt", new Vector3(0f, 1.02f, 0f), new Vector3(0.44f, 0.07f, 0.26f), Quaternion.identity, HeroMaterialRole.Metal);
+            Part(PrimitiveType.Cube, "BeltBuckle", new Vector3(0f, 1.02f, 0.15f), new Vector3(0.12f, 0.07f, 0.03f), Quaternion.identity, HeroMaterialRole.Metal);
+            // Buckle inlay (cyan - secondary costume)
+            Part(PrimitiveType.Cube, "BeltGem", new Vector3(0f, 1.02f, 0.17f), new Vector3(0.06f, 0.04f, 0.015f), Quaternion.identity, HeroMaterialRole.Accent);
 
             // Chest emblem - distinctive inverted chevron + diamond (original design)
-            // Outer diamond (rotated cube)
-            CreateCube("Emblem_Outer", new Vector3(0f, 1.38f, 0.16f), new Vector3(0.20f, 0.20f, 0.02f), Quaternion.Euler(0, 0, 45), accentMaterial, m_visualRoot);
-            CreateCube("Emblem_Inner", new Vector3(0f, 1.38f, 0.175f), new Vector3(0.11f, 0.11f, 0.02f), Quaternion.Euler(0, 0, 45), beltMaterial, m_visualRoot);
-            // Small central core
-            CreateCube("Emblem_Core", new Vector3(0f, 1.38f, 0.19f), new Vector3(0.04f, 0.04f, 0.015f), Quaternion.Euler(0, 0, 45), suitMaterial, m_visualRoot);
+            Part(PrimitiveType.Cube, "Emblem_Ring", new Vector3(0f, 1.38f, 0.16f), new Vector3(0.20f, 0.20f, 0.02f), Quaternion.Euler(0f, 0f, 45f), HeroMaterialRole.Metal);
+            Part(PrimitiveType.Cube, "Emblem_Inlay", new Vector3(0f, 1.38f, 0.175f), new Vector3(0.11f, 0.11f, 0.02f), Quaternion.Euler(0f, 0f, 45f), HeroMaterialRole.Accent);
+            Part(PrimitiveType.Cube, "Emblem_Core", new Vector3(0f, 1.38f, 0.19f), new Vector3(0.04f, 0.04f, 0.015f), Quaternion.Euler(0f, 0f, 45f), HeroMaterialRole.Suit);
 
             // ------------------------------------------------------------------
             // Arms
             // ------------------------------------------------------------------
-            // Upper arms
-            CreateCapsule("UpperArm_L", new Vector3(-0.31f, 1.32f, 0f), new Vector3(0.16f, 0.15f, 0.16f), Quaternion.identity, suitMaterial, m_visualRoot);
-            CreateCapsule("UpperArm_R", new Vector3(0.31f, 1.32f, 0f), new Vector3(0.16f, 0.15f, 0.16f), Quaternion.identity, suitMaterial, m_visualRoot);
-            // Lower arms
-            CreateCapsule("LowerArm_L", new Vector3(-0.31f, 1.03f, 0f), new Vector3(0.14f, 0.15f, 0.14f), Quaternion.identity, suitMaterial, m_visualRoot);
-            CreateCapsule("LowerArm_R", new Vector3(0.31f, 1.03f, 0f), new Vector3(0.14f, 0.15f, 0.14f), Quaternion.identity, suitMaterial, m_visualRoot);
-            // Gloves (hands)
-            CreateCube("Hand_L", new Vector3(-0.31f, 0.80f, 0f), new Vector3(0.11f, 0.15f, 0.11f), Quaternion.identity, bootsMaterial, m_visualRoot);
-            CreateCube("Hand_R", new Vector3(0.31f, 0.80f, 0f), new Vector3(0.11f, 0.15f, 0.11f), Quaternion.identity, bootsMaterial, m_visualRoot);
-            // Glove cuffs trim
-            CreateCube("GloveCuff_L", new Vector3(-0.31f, 0.88f, 0f), new Vector3(0.13f, 0.04f, 0.13f), Quaternion.identity, accentMaterial, m_visualRoot);
-            CreateCube("GloveCuff_R", new Vector3(0.31f, 0.88f, 0f), new Vector3(0.13f, 0.04f, 0.13f), Quaternion.identity, accentMaterial, m_visualRoot);
+            Part(PrimitiveType.Capsule, "UpperArm_L", new Vector3(-0.31f, 1.32f, 0f), new Vector3(0.16f, 0.15f, 0.16f), Quaternion.identity, HeroMaterialRole.Suit);
+            Part(PrimitiveType.Capsule, "UpperArm_R", new Vector3(0.31f, 1.32f, 0f), new Vector3(0.16f, 0.15f, 0.16f), Quaternion.identity, HeroMaterialRole.Suit);
+            Part(PrimitiveType.Capsule, "LowerArm_L", new Vector3(-0.31f, 1.03f, 0f), new Vector3(0.14f, 0.15f, 0.14f), Quaternion.identity, HeroMaterialRole.Suit);
+            Part(PrimitiveType.Capsule, "LowerArm_R", new Vector3(0.31f, 1.03f, 0f), new Vector3(0.14f, 0.15f, 0.14f), Quaternion.identity, HeroMaterialRole.Suit);
+
+            // Gloves (hands) - light grip leather, deliberately not the same material as the boots
+            Part(PrimitiveType.Cube, "Hand_L", new Vector3(-0.31f, 0.80f, 0f), new Vector3(0.11f, 0.15f, 0.11f), Quaternion.identity, HeroMaterialRole.Gloves);
+            Part(PrimitiveType.Cube, "Hand_R", new Vector3(0.31f, 0.80f, 0f), new Vector3(0.11f, 0.15f, 0.11f), Quaternion.identity, HeroMaterialRole.Gloves);
+            // Knuckle plates (raised pads on the front of each glove)
+            Part(PrimitiveType.Cube, "Knuckle_L", new Vector3(-0.31f, 0.815f, 0.062f), new Vector3(0.10f, 0.09f, 0.03f), Quaternion.identity, HeroMaterialRole.Gloves);
+            Part(PrimitiveType.Cube, "Knuckle_R", new Vector3(0.31f, 0.815f, 0.062f), new Vector3(0.10f, 0.09f, 0.03f), Quaternion.identity, HeroMaterialRole.Gloves);
+            // Glove cuff trim (secondary costume)
+            Part(PrimitiveType.Cube, "GloveCuff_L", new Vector3(-0.31f, 0.88f, 0f), new Vector3(0.13f, 0.04f, 0.13f), Quaternion.identity, HeroMaterialRole.Accent);
+            Part(PrimitiveType.Cube, "GloveCuff_R", new Vector3(0.31f, 0.88f, 0f), new Vector3(0.13f, 0.04f, 0.13f), Quaternion.identity, HeroMaterialRole.Accent);
 
             // ------------------------------------------------------------------
             // Head & Neck
             // ------------------------------------------------------------------
-            CreateCylinder("Neck", new Vector3(0f, 1.53f, 0f), new Vector3(0.16f, 0.03f, 0.16f), Quaternion.identity, skinMaterial, m_visualRoot);
-            // Head - sphere, slightly scaled to be oval
-            CreateSphere("Head", new Vector3(0f, 1.70f, 0f), new Vector3(0.28f, 0.32f, 0.28f), Quaternion.identity, skinMaterial, m_visualRoot);
-            // Jaw / chin accent (slightly forward)
-            CreateCube("Jaw", new Vector3(0f, 1.62f, 0.06f), new Vector3(0.18f, 0.10f, 0.10f), Quaternion.identity, skinMaterial, m_visualRoot);
+            Part(PrimitiveType.Cylinder, "Neck", new Vector3(0f, 1.53f, 0f), new Vector3(0.16f, 0.03f, 0.16f), Quaternion.identity, HeroMaterialRole.Skin);
+            Part(PrimitiveType.Sphere, "Head", new Vector3(0f, 1.70f, 0f), new Vector3(0.28f, 0.32f, 0.28f), Quaternion.identity, HeroMaterialRole.Skin);
+            Part(PrimitiveType.Cube, "Jaw", new Vector3(0f, 1.62f, 0.06f), new Vector3(0.18f, 0.10f, 0.10f), Quaternion.identity, HeroMaterialRole.Skin);
+            Part(PrimitiveType.Cube, "Ear_L", new Vector3(-0.15f, 1.70f, 0f), new Vector3(0.03f, 0.07f, 0.04f), Quaternion.identity, HeroMaterialRole.Skin);
+            Part(PrimitiveType.Cube, "Ear_R", new Vector3(0.15f, 1.70f, 0f), new Vector3(0.03f, 0.07f, 0.04f), Quaternion.identity, HeroMaterialRole.Skin);
 
-            // Visor / Mask - cyan band across eyes (distinctive hero mask)
-            CreateCube("Visor", new Vector3(0f, 1.72f, 0.15f), new Vector3(0.24f, 0.06f, 0.04f), Quaternion.identity, accentMaterial, m_visualRoot);
-            // Visor side wings (angular)
-            CreateCube("VisorWing_L", new Vector3(-0.13f, 1.72f, 0.14f), new Vector3(0.06f, 0.04f, 0.03f), Quaternion.Euler(0, 25, 0), accentMaterial, m_visualRoot);
-            CreateCube("VisorWing_R", new Vector3(0.13f, 1.72f, 0.14f), new Vector3(0.06f, 0.04f, 0.03f), Quaternion.Euler(0, -25, 0), accentMaterial, m_visualRoot);
+            // Visor / Mask - cyan band across the eyes (secondary costume) with brass bolts
+            Part(PrimitiveType.Cube, "Visor", new Vector3(0f, 1.72f, 0.15f), new Vector3(0.24f, 0.06f, 0.04f), Quaternion.identity, HeroMaterialRole.Accent);
+            Part(PrimitiveType.Cube, "VisorWing_L", new Vector3(-0.13f, 1.72f, 0.14f), new Vector3(0.06f, 0.04f, 0.03f), Quaternion.Euler(0f, 25f, 0f), HeroMaterialRole.Accent);
+            Part(PrimitiveType.Cube, "VisorWing_R", new Vector3(0.13f, 1.72f, 0.14f), new Vector3(0.06f, 0.04f, 0.03f), Quaternion.Euler(0f, -25f, 0f), HeroMaterialRole.Accent);
+            Part(PrimitiveType.Cube, "VisorBolt_L", new Vector3(-0.16f, 1.715f, 0.115f), new Vector3(0.03f, 0.03f, 0.02f), Quaternion.Euler(0f, 25f, 0f), HeroMaterialRole.Metal);
+            Part(PrimitiveType.Cube, "VisorBolt_R", new Vector3(0.16f, 1.715f, 0.115f), new Vector3(0.03f, 0.03f, 0.02f), Quaternion.Euler(0f, -25f, 0f), HeroMaterialRole.Metal);
 
-            // Eyes (dark behind visor, subtle)
-            CreateCube("Eye_L", new Vector3(-0.07f, 1.72f, 0.16f), new Vector3(0.06f, 0.02f, 0.01f), Quaternion.identity, hairMaterial, m_visualRoot);
-            CreateCube("Eye_R", new Vector3(0.07f, 1.72f, 0.16f), new Vector3(0.06f, 0.02f, 0.01f), Quaternion.identity, hairMaterial, m_visualRoot);
+            // Dark eye slits reading through the visor, and brows above it (hair material)
+            Part(PrimitiveType.Cube, "EyeSlit_L", new Vector3(-0.065f, 1.724f, 0.172f), new Vector3(0.055f, 0.022f, 0.012f), Quaternion.identity, HeroMaterialRole.Hair);
+            Part(PrimitiveType.Cube, "EyeSlit_R", new Vector3(0.065f, 1.724f, 0.172f), new Vector3(0.055f, 0.022f, 0.012f), Quaternion.identity, HeroMaterialRole.Hair);
+            Part(PrimitiveType.Cube, "Brow_L", new Vector3(-0.07f, 1.772f, 0.144f), new Vector3(0.062f, 0.016f, 0.02f), Quaternion.Euler(-12f, 0f, 0f), HeroMaterialRole.Hair);
+            Part(PrimitiveType.Cube, "Brow_R", new Vector3(0.07f, 1.772f, 0.144f), new Vector3(0.062f, 0.016f, 0.02f), Quaternion.Euler(-12f, 0f, 0f), HeroMaterialRole.Hair);
 
-            // Hair - distinctive original style: cropped fade sides, elevated angular crest peak forward
-            // Base cap covering top of head (cube flattened for low-poly, 12 tris vs 768)
-            CreateCube("Hair_Base", new Vector3(0f, 1.84f, -0.02f), new Vector3(0.30f, 0.10f, 0.30f), Quaternion.identity, hairMaterial, m_visualRoot);
-            // Central crest volume
-            CreateCube("Hair_Crest", new Vector3(0f, 1.90f, 0.04f), new Vector3(0.20f, 0.12f, 0.26f), Quaternion.Euler(-8, 0, 0), hairMaterial, m_visualRoot);
-            // Forward peak (angular forelock - signature silhouette)
-            CreateCube("Hair_Peak", new Vector3(0f, 1.88f, 0.16f), new Vector3(0.14f, 0.10f, 0.14f), Quaternion.Euler(22, 0, 0), hairMaterial, m_visualRoot);
-            // Rear volume
-            CreateCube("Hair_Back", new Vector3(0f, 1.86f, -0.14f), new Vector3(0.26f, 0.10f, 0.12f), Quaternion.identity, hairMaterial, m_visualRoot);
-            // Side fade panels (tight sides)
-            CreateCube("Hair_Side_L", new Vector3(-0.16f, 1.78f, 0f), new Vector3(0.03f, 0.12f, 0.20f), Quaternion.identity, hairMaterial, m_visualRoot);
-            CreateCube("Hair_Side_R", new Vector3(0.16f, 1.78f, 0f), new Vector3(0.03f, 0.12f, 0.20f), Quaternion.identity, hairMaterial, m_visualRoot);
-
-            // Ears (subtle)
-            CreateCube("Ear_L", new Vector3(-0.15f, 1.70f, 0f), new Vector3(0.03f, 0.07f, 0.04f), Quaternion.identity, skinMaterial, m_visualRoot);
-            CreateCube("Ear_R", new Vector3(0.15f, 1.70f, 0f), new Vector3(0.03f, 0.07f, 0.04f), Quaternion.identity, skinMaterial, m_visualRoot);
+            // Hair - original style: cropped fade sides, elevated angular crest peak forward
+            Part(PrimitiveType.Cube, "Hair_Base", new Vector3(0f, 1.84f, -0.02f), new Vector3(0.30f, 0.10f, 0.30f), Quaternion.identity, HeroMaterialRole.Hair);
+            Part(PrimitiveType.Cube, "Hair_Crest", new Vector3(0f, 1.90f, 0.04f), new Vector3(0.20f, 0.12f, 0.26f), Quaternion.Euler(-8f, 0f, 0f), HeroMaterialRole.Hair);
+            Part(PrimitiveType.Cube, "Hair_Peak", new Vector3(0f, 1.88f, 0.16f), new Vector3(0.14f, 0.10f, 0.14f), Quaternion.Euler(22f, 0f, 0f), HeroMaterialRole.Hair);
+            Part(PrimitiveType.Cube, "Hair_Back", new Vector3(0f, 1.86f, -0.14f), new Vector3(0.26f, 0.10f, 0.12f), Quaternion.identity, HeroMaterialRole.Hair);
+            Part(PrimitiveType.Cube, "Hair_Side_L", new Vector3(-0.16f, 1.78f, 0f), new Vector3(0.03f, 0.12f, 0.20f), Quaternion.identity, HeroMaterialRole.Hair);
+            Part(PrimitiveType.Cube, "Hair_Side_R", new Vector3(0.16f, 1.78f, 0f), new Vector3(0.03f, 0.12f, 0.20f), Quaternion.identity, HeroMaterialRole.Hair);
 
             // ------------------------------------------------------------------
             // Cape - short half-cape from shoulders to mid-back (adds silhouette without heavy cloth sim)
             // ------------------------------------------------------------------
-            CreateCube("Cape", new Vector3(0f, 1.18f, -0.17f), new Vector3(0.46f, 0.50f, 0.02f), Quaternion.Euler(4, 0, 0), suitMaterial, m_visualRoot);
-            // Cape top collar trim
-            CreateCube("CapeCollar", new Vector3(0f, 1.44f, -0.16f), new Vector3(0.42f, 0.04f, 0.025f), Quaternion.identity, accentMaterial, m_visualRoot);
+            Part(PrimitiveType.Cube, "Cape", new Vector3(0f, 1.18f, -0.17f), new Vector3(0.46f, 0.50f, 0.02f), Quaternion.Euler(4f, 0f, 0f), HeroMaterialRole.Suit);
+            Part(PrimitiveType.Cube, "CapeCollar", new Vector3(0f, 1.44f, -0.16f), new Vector3(0.42f, 0.04f, 0.025f), Quaternion.identity, HeroMaterialRole.Accent);
         }
 
         // ------------------------------------------------------------------
         // Primitive helpers (optimized: remove colliders, set material, shadows)
         // ------------------------------------------------------------------
-        private GameObject CreateCube(string name, Vector3 localPos, Vector3 localScale, Quaternion localRot, Material mat, Transform parent)
+        private GameObject Part(PrimitiveType type, string name, Vector3 localPos, Vector3 localScale,
+                                Quaternion localRot, HeroMaterialRole role)
         {
-            GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            CleanupPrimitive(go, name, localPos, localScale, localRot, mat, parent);
+            Material material = m_materials != null ? m_materials[role] : null;
+            if (material == null && m_materials != null)
+                material = m_materials[HeroMaterialRole.Suit]; // never leave a renderer unassigned
+
+            GameObject go = GameObject.CreatePrimitive(type);
+            CleanupPrimitive(go, name, localPos, localScale, localRot, material);
+            EnsureTangents(go);
             return go;
         }
 
-        private GameObject CreateSphere(string name, Vector3 localPos, Vector3 localScale, Quaternion localRot, Material mat, Transform parent)
-        {
-            GameObject go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            CleanupPrimitive(go, name, localPos, localScale, localRot, mat, parent);
-            return go;
-        }
-
-        private GameObject CreateCapsule(string name, Vector3 localPos, Vector3 localScale, Quaternion localRot, Material mat, Transform parent)
-        {
-            GameObject go = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            CleanupPrimitive(go, name, localPos, localScale, localRot, mat, parent);
-            return go;
-        }
-
-        private GameObject CreateCylinder(string name, Vector3 localPos, Vector3 localScale, Quaternion localRot, Material mat, Transform parent)
-        {
-            GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            CleanupPrimitive(go, name, localPos, localScale, localRot, mat, parent);
-            return go;
-        }
-
-        private void CleanupPrimitive(GameObject go, string name, Vector3 localPos, Vector3 localScale, Quaternion localRot, Material mat, Transform parent)
+        private void CleanupPrimitive(GameObject go, string name, Vector3 localPos, Vector3 localScale,
+                                      Quaternion localRot, Material mat)
         {
             go.name = name;
             // Remove all colliders (CapsuleCollider, BoxCollider, SphereCollider, MeshCollider)
@@ -359,7 +312,7 @@ namespace MobileGame.Player
 #endif
             }
 
-            go.transform.SetParent(parent, false);
+            go.transform.SetParent(m_visualRoot, false);
             go.transform.localPosition = localPos;
             go.transform.localScale = localScale;
             go.transform.localRotation = localRot;
@@ -368,29 +321,41 @@ namespace MobileGame.Player
             if (rend != null)
             {
                 rend.sharedMaterial = mat;
-                rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+                rend.shadowCastingMode = ShadowCastingMode.On;
                 rend.receiveShadows = true;
                 rend.allowOcclusionWhenDynamic = true;
+                rend.lightProbeUsage = LightProbeUsage.BlendProbes;
+                rend.reflectionProbeUsage = ReflectionProbeUsage.BlendProbes;
                 // Enable SRP batcher compatibility (no per-object motion vectors needed)
                 rend.motionVectorGenerationMode = MotionVectorGenerationMode.Object;
             }
 
-            // Put hero meshes on Player layer (8) so camera collision (Default/Environment/Ground only) ignores the hero itself.
-            // Otherwise the third-person camera's SphereCast would hit the hero's own body and snap inward.
+            // Put hero meshes on Player layer (8) so camera collision (Default/Environment/Ground only)
+            // ignores the hero itself. Otherwise the third-person camera's SphereCast would hit the
+            // hero's own body and snap inward.
             go.layer = 8;
-            // Ensure no extra scripts
-            // Keep MeshFilter as is (low poly)
         }
 
-#if UNITY_EDITOR
-        // Helper to destroy visual in editor when component removed
-        private void OnDestroy()
+        /// <summary>
+        /// Normal maps are sampled in tangent space, and the built-in primitive meshes ship without
+        /// tangents. Without them URP falls back to a derived frame, which flattens the detail on
+        /// curved parts, so the (per-instance) primitive mesh gets tangents once at build time.
+        /// </summary>
+        private static void EnsureTangents(GameObject go)
         {
-            if (!Application.isPlaying && m_visualRoot != null)
-            {
-                // Don't auto-destroy in edit mode to preserve manual edits; let user delete manually
-            }
+            var filter = go.GetComponent<MeshFilter>();
+            if (filter == null)
+                return;
+
+            Mesh mesh = filter.sharedMesh;
+            if (mesh == null)
+                return;
+
+            Vector4[] existing = mesh.tangents;
+            if (existing != null && existing.Length == mesh.vertexCount)
+                return;
+
+            mesh.RecalculateTangents();
         }
-#endif
     }
 }
