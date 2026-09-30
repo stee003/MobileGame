@@ -384,7 +384,7 @@ namespace MobileGame.UI
             return RectTransformUtility.ScreenPointToLocalPointInRectangle(m_root, screenPoint, ResolveUICamera(), out localPoint);
         }
 
-        private Camera ResolveUICamera()
+        private UnityEngine.Camera ResolveUICamera()
         {
             // Screen-space overlay canvases must pass a null camera; camera-space canvases use theirs.
             if (m_canvas != null && m_canvas.renderMode != RenderMode.ScreenSpaceOverlay)

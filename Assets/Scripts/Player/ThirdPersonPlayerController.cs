@@ -74,7 +74,7 @@ namespace MobileGame.Player
         // Internal state
         private CharacterController m_controller;
         private ThirdPersonCamera m_camera;
-        private Camera m_mainCameraFallback;
+        private UnityEngine.Camera m_mainCameraFallback;
 
         private Vector3 m_planarVelocity;      // Horizontal velocity (y is always zero).
         private float m_verticalVelocity;      // Vertical velocity in m/s (negative while falling).
@@ -382,7 +382,7 @@ namespace MobileGame.Player
             m_camera = FindFirstObjectByType<ThirdPersonCamera>();
             if (m_camera == null)
             {
-                m_mainCameraFallback = Camera.main;
+                m_mainCameraFallback = UnityEngine.Camera.main;
             }
         }
 
