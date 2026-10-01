@@ -12,8 +12,8 @@ Checks the on-disk state without opening Unity and without simulating anything
   4. the Animator is configured for Unity's animation system: humanoid avatar with a generic
      fallback, root motion off, always-animate culling, and the Animator sits on the skeleton root
      instead of on the Player root that the CharacterController owns;
-  5. the controller only supplies the IsMoving parameter, and the generated Animator Controller
-     contains one idle clip plus a neutral state, with no walking or combat animation;
+  5. the controller supplies grounded walk state and stride rate, and the generated Animator
+     Controller contains the idle and walk clips only, with no run or combat animation;
   6. ``CombatTestScene`` wires the rig and its test suite.
 
 Exit code 0 means every check passed.
@@ -35,6 +35,7 @@ HERO_SCRIPT = os.path.join(ASSETS, "Scripts", "Player", "HeroCharacterVisual.cs"
 CONTROLLER_SCRIPT = os.path.join(ASSETS, "Scripts", "Player", "ThirdPersonPlayerController.cs")
 MATERIAL_TEST_SCRIPT = os.path.join(ASSETS, "Scripts", "Player", "HeroMaterialTest.cs")
 IDLE_BUILDER_SCRIPT = os.path.join(ASSETS, "Scripts", "Player", "Editor", "HeroIdleAnimationAssetBuilder.cs")
+FOOT_PLANTING_SCRIPT = os.path.join(ASSETS, "Scripts", "Player", "HeroWalkFootPlanting.cs")
 SCENE = os.path.join(ASSETS, "Scenes", "CombatTestScene.unity")
 
 PASSED = []
@@ -81,11 +82,13 @@ def main():
     print("1. Rig components")
     print("-------------------")
     for path, label in ((RIG_SCRIPT, "HeroRig"), (TEST_SCRIPT, "HeroRigTest"),
-                        (VALIDATOR_SCRIPT, "HeroRigValidator")):
+                        (VALIDATOR_SCRIPT, "HeroRigValidator"),
+                        (FOOT_PLANTING_SCRIPT, "HeroWalkFootPlanting")):
         check(os.path.exists(path), "%s exists (%s)" % (label, os.path.relpath(path, REPO_ROOT)))
         check(meta_guid(path) is not None, "%s has a meta file with a GUID" % label)
 
-    guids = [meta_guid(path) for path in (RIG_SCRIPT, TEST_SCRIPT, VALIDATOR_SCRIPT)
+    guids = [meta_guid(path) for path in
+             (RIG_SCRIPT, TEST_SCRIPT, VALIDATOR_SCRIPT, FOOT_PLANTING_SCRIPT)
              if meta_guid(path)]
     check(len(guids) == len(set(guids)), "the new script GUIDs are unique")
 
@@ -197,8 +200,9 @@ def main():
           "the rig returns to the authored resting pose right after the avatar exists")
     check("runtimeAnimatorController = controller" in rig and
           "SerializeField] private RuntimeAnimatorController animatorController" in rig and
-          'Resources.Load<RuntimeAnimatorController>("Animations/HeroIdle/Hero_Idle")' in rig,
-          "the rig uses its optional controller override or the Resources idle controller")
+          'Resources.Load<RuntimeAnimatorController>("Animations/HeroIdle/Hero_Idle")' in rig and
+          "EnsureFootPlantingDriver();" in rig,
+          "the rig uses its Resources locomotion controller and installs the foot-planting driver")
 
     # ------------------------------------------------------------------ 5. scope guards
     print("")
@@ -206,10 +210,18 @@ def main():
     print("------------------")
     controller_source = read(CONTROLLER_SCRIPT)
     idle_builder = read(IDLE_BUILDER_SCRIPT)
+    foot_planting = read(FOOT_PLANTING_SCRIPT)
     check("IsMovingAnimatorParameter = \"IsMoving\"" in controller_source and
+          "WalkCycleRateAnimatorParameter = \"WalkCycleRate\"" in controller_source and
           "UpdateAnimatorMovementState();" in controller_source and
-          "m_animator.SetBool(IsMovingAnimatorParameterId, isMoving)" in controller_source,
-          "the player controller only supplies grounded movement state to the Animator")
+          "m_animator.SetBool(IsMovingAnimatorParameterId, isMoving)" in controller_source and
+          "m_animator.SetFloat(WalkCycleRateAnimatorParameterId, walkCycleRate)" in controller_source,
+          "the player supplies grounded walk state and speed-matched stride rate to the Animator")
+    scene_source = read(SCENE)
+    check("moveSpeed = 1.25f" in controller_source and
+          "WalkCycleReferenceSpeed = 1.25f" in controller_source and
+          "moveSpeed: 1.25" in scene_source,
+          "the default player speed stays at the walk-cycle reference pace")
     check(git_unchanged(HERO_SCRIPT), "HeroCharacterVisual.cs is untouched")
     check("AddComponent<CharacterController" not in rig,
           "the rig adds no CharacterController - the Player root keeps the existing one")
@@ -220,20 +232,41 @@ def main():
     check("new CurveSpec(\"Hips\"" in idle_builder and
           "localEulerAnglesRaw" in idle_builder and "settings.loopTime = true" in idle_builder,
           "the generated Hero_Idle clip has subtle looping transform curves")
-    check("AnimatorState idle = stateMachine.AddState(\"Idle\")" in idle_builder and
-          "idle.motion = clip" in idle_builder and
-          "AnimatorState moving = stateMachine.AddState(\"Moving\")" in idle_builder and
-          "moving.motion = null" in idle_builder,
-          "the controller contains only the idle clip plus a neutral movement state")
-    check("AnimatorConditionMode.If, 0f, MovingParameter" in idle_builder and
-          "AnimatorConditionMode.IfNot, 0f, MovingParameter" in idle_builder,
-          "Animator transitions both out of idle and back when IsMoving changes")
-    check("TestIdleAnimationTransitions" in read(os.path.join(ASSETS, "Scripts", "Player", "PlayerControllerTest.cs")) and
-          'IsName(\"Moving\")' in read(os.path.join(ASSETS, "Scripts", "Player", "PlayerControllerTest.cs")) and
-          'IsName(\"Idle\")' in read(os.path.join(ASSETS, "Scripts", "Player", "PlayerControllerTest.cs")),
-          "the Play Mode movement suite tests idle entry, exit and return")
-    check("no walking or combat clips" in test.lower(),
-          "the rig test suite covers no walking or combat animation")
+    check('WalkClipPath = Folder + "/Hero_Walk.anim"' in idle_builder and
+          'clip.name = "Hero_Walk"' in idle_builder and
+          'new PeriodicCurveSpec("LeftUpperLeg"' in idle_builder and
+          'new PeriodicCurveSpec("RightLowerLeg"' in idle_builder and
+          'new PeriodicCurveSpec("LeftFoot"' in idle_builder and
+          'new PeriodicCurveSpec("LeftUpperArm"' in idle_builder and
+          'new PeriodicCurveSpec("Chest"' in idle_builder,
+          "the generated in-place walk loop animates alternating legs, feet, counter-swinging arms and a stable torso")
+    check('AnimatorState idle = stateMachine.AddState("Idle")' in idle_builder and
+          "idle.motion = idleClip" in idle_builder and
+          'AnimatorState walk = stateMachine.AddState("Walk")' in idle_builder and
+          "walk.motion = walkClip" in idle_builder and
+          "walk.speedParameterActive = true" in idle_builder and
+          "walk.iKOnFeet = true" in idle_builder and
+          "layers[0].iKPass = true" in idle_builder,
+          "the controller has only Idle and Walk states with speed-scaled humanoid foot IK")
+    check('AnimatorConditionMode.If, 0f, MovingParameter' in idle_builder and
+          'AnimatorConditionMode.IfNot, 0f, MovingParameter' in idle_builder and
+          "leaveIdle.hasFixedDuration = true" in idle_builder and
+          "returnToIdle.hasFixedDuration = true" in idle_builder,
+          "Animator transitions smoothly between idle and walk using grounded movement state")
+    check('StanceFraction = 0.56f' in foot_planting and
+          "Physics.Raycast(rayOrigin, Vector3.down" in foot_planting and
+          "SetIKPosition(goal, plant.Position)" in foot_planting and
+          "MaxGroundedPlantError" in foot_planting,
+          "planted feet are ground-projected, held in world space and expose a sliding diagnostic")
+    movement_test = read(os.path.join(ASSETS, "Scripts", "Player", "PlayerControllerTest.cs"))
+    check("TestIdleAnimationTransitions" in movement_test and
+          'IsName("Walk")' in movement_test and 'IsName("Idle")' in movement_test and
+          all(label in movement_test for label in ("Forward", "Backward", "Right", "Left", "Diagonal")) and
+          "MaxGroundedPlantError" in movement_test and "maxChestRotation" in movement_test and
+          "maxLeftArmSwing" in movement_test,
+          "the Play Mode movement suite covers five walk directions, torso stability, arm swing and foot planting")
+    check("no running or combat clips" in " ".join(test.lower().split()),
+          "the rig test scope excludes running and combat clips")
     check("HeroRig" in read(MATERIAL_TEST_SCRIPT),
           "the material suite knows about the rig instead of failing on it")
 
@@ -256,7 +289,7 @@ def main():
     check("applyRootMotion: 0" in block, "the scene rig leaves root motion off")
     check("animatorController: {fileID: 0}" in block and
           'Resources.Load<RuntimeAnimatorController>("Animations/HeroIdle/Hero_Idle")' in rig,
-          "the rig resolves the idle-only controller from its Resources asset at runtime")
+          "the rig resolves the idle/walk controller from its Resources asset at runtime")
 
     print("")
     print("Checks passed: %d/%d" % (len(PASSED), len(PASSED) + len(FAILED)))

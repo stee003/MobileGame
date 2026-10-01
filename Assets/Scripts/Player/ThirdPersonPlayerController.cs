@@ -36,8 +36,8 @@ namespace MobileGame.Player
         [SerializeField] private ThirdPersonCamera targetCamera;
 
         [Header("Locomotion")]
-        [Tooltip("Maximum planar movement speed in meters per second.")]
-        [SerializeField] private float moveSpeed = 6.0f;
+        [Tooltip("Maximum planar walk speed in meters per second. Keep it near WalkCycleReferenceSpeed until a run cycle exists.")]
+        [SerializeField] private float moveSpeed = 1.25f;
 
         [Tooltip("Planar acceleration in meters per second squared while movement input is applied.")]
         [SerializeField] private float acceleration = 30.0f;
@@ -72,11 +72,20 @@ namespace MobileGame.Player
         [SerializeField] private float maxSlopeAngle = 45.0f;
 
         // Internal state
-        /// <summary>Animator bool used by the hero's idle-only state machine.</summary>
+        /// <summary>Animator bool that selects the grounded Idle or Walk state.</summary>
         public const string IsMovingAnimatorParameter = "IsMoving";
 
-        private const float AnimationMoveThreshold = 0.08f;
+        /// <summary>Animator float used to match the in-place walk cadence to planar speed.</summary>
+        public const string WalkCycleRateAnimatorParameter = "WalkCycleRate";
+
+        /// <summary>Reference pace used when the authored walk cycle plays at normal speed.</summary>
+        public const float WalkCycleReferenceSpeed = 1.25f;
+
+        /// <summary>Minimum grounded planar speed before a walk cycle is selected.</summary>
+        public const float AnimationMoveThreshold = 0.08f;
+
         private static readonly int IsMovingAnimatorParameterId = Animator.StringToHash(IsMovingAnimatorParameter);
+        private static readonly int WalkCycleRateAnimatorParameterId = Animator.StringToHash(WalkCycleRateAnimatorParameter);
 
         private CharacterController m_controller;
         private ThirdPersonCamera m_camera;
@@ -221,9 +230,8 @@ namespace MobileGame.Player
                 m_verticalVelocity = Mathf.Max(m_verticalVelocity - Mathf.Abs(gravity) * deltaTime, -Mathf.Abs(maxFallSpeed));
             }
 
-            // Feed only the idle/moving boundary to the Animator. There is deliberately no walk
-            // clip yet: movement uses the Animator's neutral Moving state until an animation pass
-            // adds locomotion. The grounded check also prevents idle breathing while airborne.
+            // Feed the grounded walk state and its speed-matched cycle rate to the Animator. Root
+            // motion stays off: the CharacterController remains the single owner of translation.
             UpdateAnimatorMovementState();
 
             // 5. Apply the motion.
@@ -260,8 +268,14 @@ namespace MobileGame.Player
                 !m_animator.isInitialized)
                 return;
 
-            bool isMoving = !m_isGrounded || Speed > AnimationMoveThreshold;
+            bool isMoving = m_isGrounded && Speed > AnimationMoveThreshold;
             m_animator.SetBool(IsMovingAnimatorParameterId, isMoving);
+
+            // The authored clip advances at WalkCycleReferenceSpeed. Scaling its playback rate by
+            // actual planar speed keeps each stride synchronized through acceleration and deceleration.
+            // No second locomotion clip or run state is selected here.
+            float walkCycleRate = isMoving ? Speed / WalkCycleReferenceSpeed : 0f;
+            m_animator.SetFloat(WalkCycleRateAnimatorParameterId, walkCycleRate);
         }
 
         /// <summary>Reads the shared move vector from the input facade.</summary>

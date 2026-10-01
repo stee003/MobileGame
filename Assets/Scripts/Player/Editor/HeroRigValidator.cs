@@ -168,27 +168,49 @@ namespace MobileGame.Player.EditorTools
                 RuntimeAnimatorController controller = animator.runtimeAnimatorController;
                 if (controller == null)
                 {
-                    problems.Add(sceneName + ": the idle Animator Controller is missing");
+                    problems.Add(sceneName + ": the hero locomotion Animator Controller is missing");
                 }
-                else if (controller.animationClips.Length != 1 ||
-                         controller.animationClips[0].name != "Hero_Idle")
+                else
                 {
-                    problems.Add(sceneName + ": the Animator must contain only the Hero_Idle clip");
+                    bool hasIdleClip = false;
+                    bool hasWalkClip = false;
+                    bool hasUnexpectedClip = controller.animationClips.Length != 2;
+                    foreach (AnimationClip clip in controller.animationClips)
+                    {
+                        if (clip.name == "Hero_Idle")
+                            hasIdleClip = true;
+                        else if (clip.name == "Hero_Walk")
+                            hasWalkClip = true;
+                        else
+                            hasUnexpectedClip = true;
+                    }
+
+                    if (!hasIdleClip || !hasWalkClip || hasUnexpectedClip)
+                        problems.Add(sceneName + ": the Animator must contain Hero_Idle and Hero_Walk only (no running or combat clips)");
                 }
 
                 bool hasMovingParameter = false;
+                bool hasWalkCycleRateParameter = false;
                 foreach (AnimatorControllerParameter parameter in animator.parameters)
                 {
                     if (parameter.name == ThirdPersonPlayerController.IsMovingAnimatorParameter &&
                         parameter.type == AnimatorControllerParameterType.Bool)
                         hasMovingParameter = true;
+                    if (parameter.name == ThirdPersonPlayerController.WalkCycleRateAnimatorParameter &&
+                        parameter.type == AnimatorControllerParameterType.Float)
+                        hasWalkCycleRateParameter = true;
                 }
                 if (!hasMovingParameter)
                     problems.Add(sceneName + ": the Animator is missing its IsMoving bool parameter");
+                if (!hasWalkCycleRateParameter)
+                    problems.Add(sceneName + ": the Animator is missing its WalkCycleRate float parameter");
             }
 
             if (rig.GetComponent<CharacterController>() == null)
                 problems.Add(sceneName + ": HeroRig is not on the GameObject that carries the CharacterController");
+
+            if (rig.RigRoot != null && rig.RigRoot.GetComponent<HeroWalkFootPlanting>() == null)
+                problems.Add(sceneName + ": the Animator rig root has no grounded walk foot-planting driver");
 
             if (rig.UnboundParts.Count > 0)
                 problems.Add(sceneName + ": unbound meshes: " + string.Join(", ", rig.UnboundParts.ToArray()));
