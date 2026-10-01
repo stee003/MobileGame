@@ -112,6 +112,7 @@ namespace MobileGame.Player
             ReleaseInput();
             Teleport(new Vector3(0f, 1f, 8f), 180f);
             yield return WaitFrames(10);
+            yield return RunTest("Idle animation enter / leave / return", TestIdleAnimationTransitions());
 
             Debug.Log($"[PlayerTest] Test Results: {m_passed}/{m_total} tests passed.");
 
@@ -131,6 +132,88 @@ namespace MobileGame.Player
         // ------------------------------------------------------------------
         // Tests (each marks its result through the passed-in TestResult)
         // ------------------------------------------------------------------
+
+        private IEnumerator TestIdleAnimationTransitions()
+        {
+            TestResult result = new TestResult();
+            HeroRig rig = player.GetComponent<HeroRig>();
+            Animator animator = rig != null ? rig.Animator : null;
+
+            if (animator == null || animator.runtimeAnimatorController == null)
+            {
+                Debug.LogError("[PlayerTest] Idle animation FAILED: the HeroRig Animator/controller is missing.");
+                yield return result;
+                yield break;
+            }
+
+            ReleaseInput();
+            Teleport(new Vector3(0f, 1f, 8f), 180f);
+            yield return WaitFrames(18);
+
+            bool enteredIdle = animator.GetCurrentAnimatorStateInfo(0).IsName("Idle") && player.IsGrounded;
+            if (!enteredIdle)
+            {
+                Debug.LogError("[PlayerTest] Idle animation FAILED: a grounded, stationary player did not enter Idle.");
+                yield return result;
+                yield break;
+            }
+
+            Transform chest = rig.GetBone(HeroJoint.Chest);
+            Quaternion idlePose = chest != null ? chest.localRotation : Quaternion.identity;
+            float observedChestMotion = 0f;
+            float observationTime = 0f;
+            while (observationTime < 0.65f)
+            {
+                yield return null;
+                observationTime += Time.deltaTime;
+                if (chest != null)
+                    observedChestMotion = Mathf.Max(observedChestMotion,
+                        Quaternion.Angle(idlePose, chest.localRotation));
+            }
+            bool visiblyAlive = chest != null && observedChestMotion > 0.05f;
+
+            // Use the same mobile-input seam as gameplay. The controller must leave idle only once
+            // planar speed is real, then return after deceleration settles to a grounded standstill.
+            Drive(Vector2.up);
+            float elapsed = 0f;
+            while (elapsed < 1.5f &&
+                   !(player.Speed > 0.08f && animator.GetCurrentAnimatorStateInfo(0).IsName("Moving")))
+            {
+                yield return null;
+                elapsed += Time.deltaTime;
+            }
+            bool leftIdle = player.Speed > 0.08f && animator.GetCurrentAnimatorStateInfo(0).IsName("Moving");
+
+            ReleaseInput();
+            elapsed = 0f;
+            while (elapsed < 2f &&
+                   !(player.Speed <= 0.08f && player.IsGrounded &&
+                     animator.GetCurrentAnimatorStateInfo(0).IsName("Idle")))
+            {
+                yield return null;
+                elapsed += Time.deltaTime;
+            }
+            bool returnedToIdle = player.Speed <= 0.08f && player.IsGrounded &&
+                                  animator.GetCurrentAnimatorStateInfo(0).IsName("Idle");
+            ReleaseInput();
+
+            if (!visiblyAlive || !leftIdle || !returnedToIdle)
+            {
+                Teleport(new Vector3(0f, 1f, 8f), 180f);
+                Debug.LogError("[PlayerTest] Idle animation FAILED: breathing=" + visiblyAlive +
+                               ", left idle on movement=" + leftIdle +
+                               ", returned after stopping=" + returnedToIdle + ".");
+                yield return result;
+                yield break;
+            }
+
+            Teleport(new Vector3(0f, 1f, 8f), 180f);
+            ReleaseInput();
+            Debug.Log("[PlayerTest] Idle animation PASSED: grounded stillness entered a moving idle pose, " +
+                      "movement exited to the neutral state, and stopping returned to idle.");
+            result.Passed = true;
+            yield return result;
+        }
 
         private IEnumerator StaticChecks()
         {

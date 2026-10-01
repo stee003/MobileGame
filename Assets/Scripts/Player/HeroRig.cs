@@ -143,7 +143,8 @@ namespace MobileGame.Player
     /// avatar built from a true T-pose: the arms are rotated out to the sides before
     /// <c>AvatarBuilder.BuildHumanAvatar</c> runs and returned to the resting pose straight
     /// afterwards, so the avatar's bind pose is a valid T-pose while the hero still stands relaxed.
-    /// No clips are created - the rig ships without animation content.</para>
+    /// Its controller contains only the looping idle clip and a neutral movement state; no walk or
+    /// combat clips are included.</para>
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(HeroCharacterVisual))]
@@ -170,7 +171,7 @@ namespace MobileGame.Player
         [SerializeField] private bool logBuildReport = true;
 
         [Header("Animation")]
-        [Tooltip("Optional controller. Left empty on purpose: the rig ships without animation clips.")]
+        [Tooltip("Optional Animator Controller override. If empty, Hero_Idle is loaded from Resources.")]
         [SerializeField] private RuntimeAnimatorController animatorController;
 
         [Tooltip("Must stay false - the CharacterController owns the root motion of this hero.")]
@@ -249,6 +250,17 @@ namespace MobileGame.Player
             // OnEnable ordering is not, so try once more before giving up on the visual.
             if (buildOnEnable)
                 BuildIfNeeded();
+
+            // The Editor asset builder runs on a delayed callback. If a scene enters Play Mode before
+            // that callback finishes (including Enter Play Mode with scene reload disabled), retry the
+            // Resources lookup once the runtime lifecycle begins.
+            if (m_animator != null && m_animator.runtimeAnimatorController == null && animatorController == null)
+            {
+                RuntimeAnimatorController idleController =
+                    Resources.Load<RuntimeAnimatorController>("Animations/HeroIdle/Hero_Idle");
+                if (idleController != null)
+                    m_animator.runtimeAnimatorController = idleController;
+            }
         }
 
 #if UNITY_EDITOR
@@ -794,8 +806,18 @@ namespace MobileGame.Player
             // soon as the renderers leave the frustum, which silently breaks animation and tests.
             m_animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
             m_animator.updateMode = AnimatorUpdateMode.Normal;
-            m_animator.runtimeAnimatorController = animatorController;
+            RuntimeAnimatorController controller = animatorController;
+            if (controller == null)
+                controller = Resources.Load<RuntimeAnimatorController>("Animations/HeroIdle/Hero_Idle");
+
+            m_animator.runtimeAnimatorController = controller;
             m_animator.logWarnings = true;
+            if (controller == null)
+            {
+                Debug.LogWarning("[HeroRig] Hero idle controller was not found at " +
+                                 "Resources/Animations/HeroIdle/Hero_Idle. Run the Hero Idle asset builder " +
+                                 "in the Editor before entering Play Mode.", this);
+            }
         }
 
         // ------------------------------------------------------------------

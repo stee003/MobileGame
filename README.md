@@ -153,8 +153,20 @@ Unity's humanoid importer expects a real T-pose, so the rig poses the arms out t
 (`localRotation` ±90° about Z, never a world rotation — the player root is yawed), builds the avatar,
 then returns the hero to its authored resting pose with both soles exactly on the ground. The
 `Animator` sits **on the skeleton root, not on the `Player` root**, with `applyRootMotion = false`
-(the `CharacterController` owns that transform), `cullingMode = AlwaysAnimate` and an **empty
-controller slot** — there is no combat animation yet, only the rig.
+(the `CharacterController` owns that transform) and `cullingMode = AlwaysAnimate`.
+
+The only authored animation is `Hero_Idle`: a seamless 4.2-second loop with subtle breathing,
+pelvis weight shift, relaxed counter-motion through the shoulders and head, and small hand/wrist
+drift. `HeroIdleAnimationAssetBuilder` authors the clip and `Hero_Idle` Animator Controller through
+Unity's animation APIs into `Assets/Resources/Animations/HeroIdle/` on first Editor load (or via
+**Tools/MobileGame/Animations/Rebuild Hero Idle Assets**). The controller defaults to `Idle`; the
+player controller sets its `IsMoving` bool from grounded planar speed to transition to a neutral
+`Moving` state, then returns to idle when the player settles. The neutral state has no clip: walking
+and combat animations are deliberately not part of this pass.
+
+`PlayerControllerTest` also checks that a still grounded hero enters an animated idle pose, movement
+leaves idle, and coming to rest returns to idle. The rig verification suite temporarily pauses the
+Animator while it exercises bone poses, then restores animation evaluation.
 
 Because the hero is built from Unity primitives (shared meshes, no bone weights), the binding is
 **rigid**: each mesh follows exactly one bone, and the deformation work is joint placement, pivots,
@@ -164,17 +176,16 @@ the chest) and the abdomen/neck meshes that sat in knife-edge gaps between their
 
 Tools (`Tools/HeroRigVerification/`, see its `README.md` and `REPORT.md`):
 
-* `verify_hero_rig.py` - static verification of the skeleton, the binding, the Unity animation setup,
-  the scope (controller and hero builder untouched, no animation content) and the scene wiring
-  (58 checks, standard library only, CI friendly).
+* `verify_hero_rig.py` - static verification of the skeleton, binding, idle-only Animator setup,
+  scope and scene wiring (61 checks, standard library only, CI friendly).
 * `simulate_hero_rig.py` - geometric verification on a model that parses the same C# tables and
   reproduces the transform hierarchy, Unity's quaternion math and the rigid binding: T-pose and rest
   pose, 30 simple rotations with rigid-travel/seam/ground checks, and 400 random multi-joint stress
   poses (51 checks).
 
-In the Editor, `HeroRigTest` runs the 40-check Play Mode suite (30 rotations plus 150 random poses),
+In the Editor, `HeroRigTest` runs the 42-check Play Mode suite (30 rotations plus 150 random poses),
 and **Tools/MobileGame/Hero Rig/Validate Rig Setup** checks the rig that is actually in the open
-scene.
+scene. `PlayerControllerTest` verifies idle entry, movement exit and return to idle in Play Mode.
 
 ## Player controller
 
@@ -220,7 +231,7 @@ wiring, grounded-at-spawn, idle motion integrity (no zero-length motion reaches 
 forward/backward/left/right movement, camera-relative movement, acceleration, deceleration,
 rotation toward movement, gravity/falling/landing and slope traversal.
 It runs automatically on Start in Play Mode (or via its **Verify: Run Player Controller Test
-Suite** context menu) and reports `VERIFICATION PASSED` for all 15 checks. The suite teleports the
+Suite** context menu) and reports `VERIFICATION PASSED` for all 16 checks, including idle entry, exit and return. The suite teleports the
 capsule around the arena while it runs (about 20 s of game time) and returns it to the spawn point
 at (0, 1, 8) when it finishes; set `Run On Start` to false on the component if you would rather
 trigger it by hand.
@@ -361,7 +372,7 @@ for Android/iOS, Android min API **24**, target API **35**, **ARM64** only.
 5. Open `Assets/Scenes/CombatTestScene.unity` and press **Play**:
    * The third-person camera frames the temporary capsule player at the default distance (5 m) and height (1.6 m) with zero Console errors.
    * `CameraSystemTest` runs automatically on Start (or via its **Verify: Run Camera Test Suite** context menu), reporting `VERIFICATION PASSED`.
-   * `PlayerControllerTest` runs automatically on Start (or via its **Verify: Run Player Controller Test Suite** context menu), reporting `VERIFICATION PASSED` for all 15 checks (including *Idle motion integrity*, which fails if a zero-length motion reaches `CharacterController.Move` or if the `IsNormalized(dir, 0.001f)` assertion is logged).
+   * `PlayerControllerTest` runs automatically on Start (or via its **Verify: Run Player Controller Test Suite** context menu), reporting `VERIFICATION PASSED` for all 16 checks (including idle entry/exit/return and *Idle motion integrity*, which fails if a zero-length motion reaches `CharacterController.Move` or if the `IsNormalized(dir, 0.001f)` assertion is logged).
    * `VirtualJoystickTest` runs automatically after the player suite (or via its **Verify: Run Virtual Joystick Test Suite** context menu), reporting `VERIFICATION PASSED`.
    * `TouchCameraControlTest` runs automatically after the joystick suite (or via its **Verify: Run Touch Camera Control Test Suite** context menu), reporting `VERIFICATION PASSED` across all checks (wiring, horizontal rotation, vertical camera limits, smooth rotation, adjustable sensitivity, movement joystick touch separation, simultaneous dual-thumb control, future UI button touch separation, and multi-aspect-ratio verification).
    * **Mobile touch camera in Game view**: drag on the right half of the Game view to smoothly orbit the camera horizontally and vertically (clamped between `-35°` and `+70°`). Dragging the movement joystick on the left moves the player without rotating the camera. Switch the Game view aspect ratio dropdown (`16:9`, `18:9`, `19.5:9`, `20:9`, `4:3`, `Free Aspect`) to verify responsive layout and consistent sensitivity across aspect ratios.
@@ -387,14 +398,14 @@ for Android/iOS, Android min API **24**, target API **35**, **ARM64** only.
    * **Hero rig**: the hero stands with both soles on the ground and the `HeroRig` root appears under
      the hero visual, carrying the `Animator`. `HeroRigTest` runs automatically after the material
      suite (or via its **Verify: Run Hero Rig Test Suite** context menu) and reports
-     `VERIFICATION PASSED` for all 40 checks: the Animator/avatar setup, the humanoid mapping of all
+     `VERIFICATION PASSED` for all 42 checks: the Animator/avatar setup, the humanoid mapping of all
      51 bones, the binding of all 57 meshes, the T-pose, 30 simple rotations (hips, spine, chest,
      neck, head, shoulders, elbows, wrists, fingers, hips, knees, ankles, toes) and 150 random
      multi-joint poses. The player still moves exactly as before - the rig adds no root motion and
      touches no collider.
    * **Rig in the Editor**: run **Tools/MobileGame/Hero Rig/Validate Rig Setup** - the Console
      reports PASSED for the skeleton, the humanoid avatar, the binding and the Animator settings.
-   * **Headless rig checks**: `python3 Tools/HeroRigVerification/verify_hero_rig.py` (58 checks) and
+   * **Headless rig checks**: `python3 Tools/HeroRigVerification/verify_hero_rig.py` (61 checks) and
      `python3 Tools/HeroRigVerification/simulate_hero_rig.py` (51 checks) both exit 0.
 
 Note: the ziggurat's 0.6 m tier steps are taller than the `CharacterController`'s 0.3 m step

@@ -72,9 +72,16 @@ namespace MobileGame.Player
         [SerializeField] private float maxSlopeAngle = 45.0f;
 
         // Internal state
+        /// <summary>Animator bool used by the hero's idle-only state machine.</summary>
+        public const string IsMovingAnimatorParameter = "IsMoving";
+
+        private const float AnimationMoveThreshold = 0.08f;
+        private static readonly int IsMovingAnimatorParameterId = Animator.StringToHash(IsMovingAnimatorParameter);
+
         private CharacterController m_controller;
         private ThirdPersonCamera m_camera;
         private UnityEngine.Camera m_mainCameraFallback;
+        private Animator m_animator;
 
         private Vector3 m_planarVelocity;      // Horizontal velocity (y is always zero).
         private float m_verticalVelocity;      // Vertical velocity in m/s (negative while falling).
@@ -214,6 +221,11 @@ namespace MobileGame.Player
                 m_verticalVelocity = Mathf.Max(m_verticalVelocity - Mathf.Abs(gravity) * deltaTime, -Mathf.Abs(maxFallSpeed));
             }
 
+            // Feed only the idle/moving boundary to the Animator. There is deliberately no walk
+            // clip yet: movement uses the Animator's neutral Moving state until an animation pass
+            // adds locomotion. The grounded check also prevents idle breathing while airborne.
+            UpdateAnimatorMovementState();
+
             // 5. Apply the motion.
             Vector3 velocity = m_planarVelocity + Vector3.up * m_verticalVelocity;
             Vector3 motion = velocity * deltaTime;
@@ -237,6 +249,19 @@ namespace MobileGame.Player
             {
                 transform.position += motion;
             }
+        }
+
+        private void UpdateAnimatorMovementState()
+        {
+            if (m_animator == null)
+                m_animator = GetComponentInChildren<Animator>(true);
+
+            if (m_animator == null || !m_animator.isActiveAndEnabled ||
+                !m_animator.isInitialized)
+                return;
+
+            bool isMoving = !m_isGrounded || Speed > AnimationMoveThreshold;
+            m_animator.SetBool(IsMovingAnimatorParameterId, isMoving);
         }
 
         /// <summary>Reads the shared move vector from the input facade.</summary>

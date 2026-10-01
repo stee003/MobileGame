@@ -27,8 +27,8 @@ namespace MobileGame.Player
     ///       seams between neighbouring parts closed, and has to keep the body off the floor.</item>
     /// <item><b>Stress</b> - hundreds of random multi-joint poses inside the joint limits, checking
     ///       the same invariants.</item>
-    /// <item><b>Scope</b> - no controller and no clips: the rig ships without animation content, and
-    ///       therefore without combat animation.</item>
+    /// <item><b>Scope</b> - the Animator contains only the idle loop; there are no walking or combat
+    ///       clips. The suite pauses Animator evaluation while it checks direct bone rotations.</item>
     /// </list>
     /// </para>
     ///
@@ -165,6 +165,13 @@ namespace MobileGame.Player
             yield return null;
 
             TestAnimatorSetup();
+            // These rig checks author bone rotations directly. Pause the idle state machine while
+            // they run so normal animation evaluation cannot overwrite the pose under test.
+            Animator testAnimator = rig.Animator;
+            bool restoreAnimatorEnabled = testAnimator != null && testAnimator.enabled;
+            if (testAnimator != null)
+                testAnimator.enabled = false;
+
             TestSkeleton();
             TestBinding();
             yield return TestTPose();
@@ -173,6 +180,8 @@ namespace MobileGame.Player
             TestScope();
 
             rig.ApplyRestPose();
+            if (testAnimator != null)
+                testAnimator.enabled = restoreAnimatorEnabled;
 
             Debug.Log(Tag + $" Test Results: {m_passed}/{m_total} checks passed.");
             Debug.Log(m_passed == m_total
@@ -208,6 +217,16 @@ namespace MobileGame.Player
             Check(!animator.applyRootMotion, "[1] root motion is off - the controller owns the root");
             Check(animator.cullingMode == AnimatorCullingMode.AlwaysAnimate,
                   "[1] culling is AlwaysAnimate, so the bones keep evaluating off screen");
+            Check(animator.runtimeAnimatorController != null,
+                  "[1] the idle-only Animator Controller is assigned");
+            bool hasMovingParameter = false;
+            foreach (AnimatorControllerParameter parameter in animator.parameters)
+            {
+                if (parameter.name == ThirdPersonPlayerController.IsMovingAnimatorParameter &&
+                    parameter.type == AnimatorControllerParameterType.Bool)
+                    hasMovingParameter = true;
+            }
+            Check(hasMovingParameter, "[1] the Animator exposes the IsMoving bool used by the player controller");
             Check(rig.BoneCount == 52, "[1] the skeleton has 52 bones (found " + rig.BoneCount + ")");
         }
 
@@ -587,9 +606,11 @@ namespace MobileGame.Player
         private void TestScope()
         {
             Animator animator = rig.Animator;
-            Check(animator != null && animator.runtimeAnimatorController == null,
-                  "[7] no animator controller is assigned - the rig ships without animation clips, " +
-                  "so there is no combat animation in it");
+            bool idleOnlyController = animator != null && animator.runtimeAnimatorController != null &&
+                                      animator.runtimeAnimatorController.animationClips.Length == 1 &&
+                                      animator.runtimeAnimatorController.animationClips[0].name == "Hero_Idle";
+            Check(idleOnlyController,
+                  "[7] the Animator contains only Hero_Idle (no walking or combat clips)");
             Check(rig.GetComponent<CharacterController>() != null && rig.GetComponent<CharacterController>().enabled,
                   "[7] the CharacterController on the Player is untouched and enabled");
             Check(rig.GetComponent<ThirdPersonPlayerController>() != null &&

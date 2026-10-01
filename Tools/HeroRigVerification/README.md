@@ -10,8 +10,8 @@ rig_model.py             parses the hero meshes and the C# bone/bind/fit tables,
                          sphere separation math
 simulate_hero_rig.py     drives that model the way HeroRigTest drives the real rig: 51 checks in
                          4 sections (rig data, T-pose and rest pose, simple rotations, stress)
-verify_hero_rig.py       static verification of the files on disk: 58 checks in 6 sections
-                         (components and GUIDs, skeleton contents, mesh binding, Unity animation
+verify_hero_rig.py       static verification of the files on disk: 61 checks in 6 sections
+                         (components and GUIDs, skeleton contents, mesh binding, idle-only Animator
                          setup, scope, scene wiring)
 ```
 
