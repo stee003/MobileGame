@@ -27,8 +27,8 @@ namespace MobileGame.Player
     ///       seams between neighbouring parts closed, and has to keep the body off the floor.</item>
     /// <item><b>Stress</b> - hundreds of random multi-joint poses inside the joint limits, checking
     ///       the same invariants.</item>
-    /// <item><b>Scope</b> - the Animator contains only the idle loop; there are no walking or combat
-    ///       clips. The suite pauses Animator evaluation while it checks direct bone rotations.</item>
+    /// <item><b>Scope</b> - the Animator contains the idle and walk loops only; there are no running
+    ///       or combat clips. The suite pauses Animator evaluation while it checks direct bone rotations.</item>
     /// </list>
     /// </para>
     ///
@@ -218,15 +218,22 @@ namespace MobileGame.Player
             Check(animator.cullingMode == AnimatorCullingMode.AlwaysAnimate,
                   "[1] culling is AlwaysAnimate, so the bones keep evaluating off screen");
             Check(animator.runtimeAnimatorController != null,
-                  "[1] the idle-only Animator Controller is assigned");
+                  "[1] the Hero_Idle/Hero_Walk locomotion Animator Controller is assigned");
             bool hasMovingParameter = false;
+            bool hasWalkCycleRateParameter = false;
             foreach (AnimatorControllerParameter parameter in animator.parameters)
             {
                 if (parameter.name == ThirdPersonPlayerController.IsMovingAnimatorParameter &&
                     parameter.type == AnimatorControllerParameterType.Bool)
                     hasMovingParameter = true;
+                if (parameter.name == ThirdPersonPlayerController.WalkCycleRateAnimatorParameter &&
+                    parameter.type == AnimatorControllerParameterType.Float)
+                    hasWalkCycleRateParameter = true;
             }
-            Check(hasMovingParameter, "[1] the Animator exposes the IsMoving bool used by the player controller");
+            Check(hasMovingParameter && hasWalkCycleRateParameter,
+                  "[1] the Animator exposes IsMoving and WalkCycleRate for speed-matched walking");
+            Check(rig.RigRoot.GetComponent<HeroWalkFootPlanting>() != null,
+                  "[1] the Animator rig root has its grounded foot-planting IK driver");
             Check(rig.BoneCount == 52, "[1] the skeleton has 52 bones (found " + rig.BoneCount + ")");
         }
 
@@ -606,11 +613,26 @@ namespace MobileGame.Player
         private void TestScope()
         {
             Animator animator = rig.Animator;
-            bool idleOnlyController = animator != null && animator.runtimeAnimatorController != null &&
-                                      animator.runtimeAnimatorController.animationClips.Length == 1 &&
-                                      animator.runtimeAnimatorController.animationClips[0].name == "Hero_Idle";
-            Check(idleOnlyController,
-                  "[7] the Animator contains only Hero_Idle (no walking or combat clips)");
+            bool idleAndWalkOnlyController = false;
+            if (animator != null && animator.runtimeAnimatorController != null)
+            {
+                AnimationClip[] clips = animator.runtimeAnimatorController.animationClips;
+                bool hasIdle = false;
+                bool hasWalk = false;
+                bool hasUnexpected = clips.Length != 2;
+                foreach (AnimationClip clip in clips)
+                {
+                    if (clip.name == "Hero_Idle")
+                        hasIdle = true;
+                    else if (clip.name == "Hero_Walk")
+                        hasWalk = true;
+                    else
+                        hasUnexpected = true;
+                }
+                idleAndWalkOnlyController = hasIdle && hasWalk && !hasUnexpected;
+            }
+            Check(idleAndWalkOnlyController,
+                  "[7] the Animator contains Hero_Idle and Hero_Walk only (no running or combat clips)");
             Check(rig.GetComponent<CharacterController>() != null && rig.GetComponent<CharacterController>().enabled,
                   "[7] the CharacterController on the Player is untouched and enabled");
             Check(rig.GetComponent<ThirdPersonPlayerController>() != null &&

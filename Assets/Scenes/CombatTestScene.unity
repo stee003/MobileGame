@@ -3665,7 +3665,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   targetCamera: {fileID: 100155}
-  moveSpeed: 6
+  moveSpeed: 1.25
   acceleration: 30
   deceleration: 45
   rotationSpeed: 720

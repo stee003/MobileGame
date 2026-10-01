@@ -1,26 +1,30 @@
 # Hero rig pass — verification report
 
-Task: build and verify the hero's humanoid rig, then add only its original looping idle animation.
-The Animator has an Idle state and a neutral Moving state; no walking or combat clips are authored.
-The player controller only supplies grounded speed state to drive those Animator transitions.
+Task: build and verify the hero's humanoid rig, author the idle loop, then add only its original
+in-place walking animation. The Animator has Idle and Walk states; no running or combat clips are
+authored. The player controller supplies grounded state and speed-matched stride rate, while
+Humanoid foot IK holds the planted shoes and the CharacterController owns all root movement.
 
 ## What changed
 
 | Area | Change |
 | --- | --- |
 | `Assets/Scripts/Player/HeroRig.cs` | new: the 52-bone humanoid skeleton (51 bones mapped into a `HumanDescription`, `HeadTop_End` a helper that gives the head bone an axis), the joint table with per-joint limits, the bind table for all 57 hero meshes, the fit table that extends two meshes into their neighbours, humanoid avatar construction with a generic fallback, and the `Animator` on the skeleton root |
-| `Assets/Scripts/Player/HeroRigTest.cs` | Play Mode suite, now 42 checks in 7 sections, driving the real component |
-| `Assets/Scripts/Player/Editor/HeroIdleAnimationAssetBuilder.cs` | authors a seamless 4.2-second breathing/weight-shift idle clip and the Idle/Moving Animator Controller through Unity APIs |
-| `Assets/Scripts/Player/Editor/HeroRigValidator.cs` | **Tools/MobileGame/Hero Rig/** — validate the rig setup, rebuild it in open scenes, re-apply the rest pose |
-| `Assets/Scripts/Player/ThirdPersonPlayerController.cs` | passes grounded speed to the Animator's `IsMoving` bool; no locomotion or combat animation logic |
+| `Assets/Scripts/Player/HeroRigTest.cs` | Play Mode rig suite, now 43 checks in 7 sections, driving the real component |
+| `Assets/Scripts/Player/Editor/HeroIdleAnimationAssetBuilder.cs` | authors the 4.2-second idle, a seamless in-place `Hero_Walk` gait, and the Idle/Walk controller through Unity APIs |
+| `Assets/Scripts/Player/HeroWalkFootPlanting.cs` | grounded Humanoid foot IK anchors each shoe during stance; exposes planted-ankle error for tests |
+| `Assets/Scripts/Player/Editor/HeroRigValidator.cs` | **Tools/MobileGame/Hero Rig/** — validate the rig setup, both clips, and foot-planting driver |
+| `Assets/Scripts/Player/ThirdPersonPlayerController.cs` | drives `IsMoving` and `WalkCycleRate`; walk pace is 1.25 m/s and matches the authored gait |
 | `Assets/Scripts/Player/HeroMaterialTest.cs` | check `[12/13]` now accepts the one `Animator` on the rig root (root motion off) instead of requiring the visual root to carry no components at all |
 | `Assets/Scenes/CombatTestScene.unity` | `HeroRig` added to the `Player` object, plus a `HeroRigTest` root object wired to it |
 | `Tools/HeroRigVerification/` | `rig_model.py` (C# table parser + FK + exact separation math), `simulate_hero_rig.py`, `verify_hero_rig.py` |
 
-`HeroCharacterVisual.cs` remains unchanged. The idle clip and controller are generated into
+`HeroCharacterVisual.cs` remains unchanged. The idle clip, walk clip and controller are generated into
 `Assets/Resources/Animations/HeroIdle/` by the Editor asset builder on first load (or from its Tools
 menu). `HeroRig` loads that controller from Resources unless an explicit override is assigned. The
-controller contains one animation clip (`Hero_Idle`) and one clipless neutral movement state.
+controller contains exactly two clips (`Hero_Idle`, `Hero_Walk`) and transitions smoothly between
+Idle and Walk. `WalkCycleRate` is planar speed divided by the 1.25 m/s reference pace; the walk clip
+is in-place and foot IK holds its grounded stance targets.
 
 The hero is built from Unity primitives, which are shared meshes without bone weights, so the
 binding is **rigid** — each of the 57 meshes follows exactly one bone. Skinning is impossible here
@@ -38,9 +42,9 @@ Three layers, in order of authority:
    seam and ground checks, and 150 random multi-joint stress poses inside the joint limits. It runs
    automatically on Start in `CombatTestScene`, or from the Inspector context menu
    (**Verify: Run Hero Rig Test Suite**).
-2. **`verify_hero_rig.py`** (this folder) — static verification of the files on disk: 61 checks in 6
-   sections. It checks the idle clip authoring, both Animator transitions, the player movement
-   signal, and the Play Mode test coverage, as well as GUIDs, bindings, root motion and scope.
+2. **`verify_hero_rig.py`** (this folder) — static verification of the files on disk: 66 checks in 6
+   sections. It checks both authored clips, walk speed/IK wiring, idle↔walk transitions, five-direction
+   Play Mode coverage, as well as GUIDs, bindings, root motion and the no-run/no-combat scope.
 3. **`simulate_hero_rig.py`** (this folder) — geometric verification: 51 checks in 4 sections, on a
    model that parses the same C# tables and reproduces the transform hierarchy, Unity's quaternion
    math and the rigid binding, with exact separation math for box/box (SAT), capsule/capsule,
@@ -60,7 +64,7 @@ the check is not vacuous). Sign-off on the Avatar itself must come from opening 
 ```
 $ python3 Tools/HeroRigVerification/verify_hero_rig.py
 ...
-Checks passed: 61/61
+Checks passed: 66/66
 HERO RIG STATIC VERIFICATION PASSED
 
 $ python3 Tools/HeroRigVerification/simulate_hero_rig.py
@@ -75,11 +79,11 @@ RIG VERIFICATION PASSED
 | T-pose and rest pose | 16 | PASS — arms horizontal at shoulder height, legs straight down, both soles exactly at y = 0, nothing but the boots below 0.160 |
 | Simple rotations | 9 | PASS — 30 rotations, every joint holds what it was given, subtrees move rigidly, nothing outside moves, returning to rest is exact, no seam tears |
 | Stress | 7 | PASS — 400 random poses: no NaN, no torn seams, nothing above the boots reaches the floor |
-| Static: components | 12 | PASS — scripts, unique GUIDs, namespace, execution order, menus |
+| Static: components | 14 | PASS — rig/test/validator/foot-plant scripts, unique GUIDs, namespace, execution order, menus |
 | Static: skeleton | 16 | PASS — every bone the task asks for is declared |
 | Static: binding | 5 | PASS — 57 meshes, no duplicates, no unknown parts |
-| Static: Unity animation setup | 11 | PASS — humanoid avatar with validation and generic fallback, root motion off, `AlwaysAnimate`, idle controller resource fallback |
-| Static: scope | 10 | PASS — grounded movement parameter wiring, idle-only clip/state, transition and Play Mode checks, no colliders or combat clips |
+| Static: Unity animation setup | 11 | PASS — humanoid avatar with validation and generic fallback, root motion off, `AlwaysAnimate`, Idle/Walk controller resource fallback, foot-planting driver |
+| Static: scope | 13 | PASS — grounded walk/stride-rate wiring, walk-pace default, Idle/Walk clips only, smooth transitions, five-direction torso/arm/foot checks, no running or combat clips |
 | Static: scene wiring | 7 | PASS — `CombatTestScene` has the rig and test object, humanoid kind and Resources controller fallback |
 
 ### Measured skeleton
@@ -154,5 +158,6 @@ bounding boxes, which reported the neck's top rim as new volume before.
   a rigid-body bound instead: every boot corner must stay inside its measured ankle radius
   (`Foot` 252 mm, `BootCuff` 168, `BootStrap` 177). The fix is humanoid foot IK in the animation
   pass.
-* **Only the idle pass exists.** The controller has no walking, attack, dodge or combat clips. Foot
-  planting during large poses still needs a future IK/locomotion pass.
+* **Walk-only scope.** The controller intentionally has no running, attack, dodge or combat clips.
+  Grounded walking uses foot IK only during the planted part of the stride; there is no fall/air
+  animation, and IK for unusual obstacles or large poses remains out of scope.

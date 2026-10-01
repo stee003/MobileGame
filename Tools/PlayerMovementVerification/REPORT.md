@@ -1,8 +1,9 @@
 # Player controller verification report
 
-Task: create the basic third-person player controller only (camera-relative movement,
-acceleration, deceleration, rotation toward movement, gravity, ground detection) on a temporary
-capsule, and verify walking in all directions, rotating, stopping, slopes, falling and landing.
+Task: re-verify the basic third-person player controller after setting its default maximum speed to
+walking pace (1.25 m/s) so the Hero_Walk stride remains physically plausible. Camera-relative movement,
+acceleration, deceleration, rotation, gravity, ground detection, slopes, falling and landing remain
+covered by the same checks.
 
 ## How it was verified
 
@@ -31,23 +32,24 @@ sign-off must come from running `PlayerControllerTest` in the Unity Editor.
 $ python3 Tools/PlayerMovementVerification/simulate_player_movement.py
 Loaded 23 colliders from Assets/Scenes/CombatTestScene.unity
 ...
-Checks passed: 51/51
+Checks passed: 54/54
 VERIFICATION PASSED
 ```
 
 | Requirement | Checks | Result |
 | --- | --- | --- |
-| Inspector configuration | 2 | PASS — speed 6 m/s, acceleration 30 m/s², deceleration 45 m/s², rotation 720 deg/s, gravity 20 m/s² |
+| Inspector configuration | 2 | PASS — walk speed 1.25 m/s, acceleration 30 m/s², deceleration 45 m/s², rotation 720 deg/s, gravity 20 m/s² |
 | Ground detection at spawn | 2 | PASS — grounded and stable while idle (no vertical drift) |
 | Idle motion integrity | 3 | PASS — 60 idle frames after a movement reset never handed `CharacterController.Move` a zero-length vector; the 60 degenerate motions are detected and skipped instead (0 engine calls) |
-| Forward / backward / left / right | 12 | PASS — 3.05 m in 0.60 s per direction (expected ≈ 3.00 m), alignment 1.000, grounded throughout |
+| Forward / backward / left / right | 12 | PASS — 0.73 m in 0.60 s per direction (expected ≈ 0.72 m), alignment 1.000, grounded throughout |
+| Diagonal | 3 | PASS — 0.73 m in 0.60 s, normalized speed, alignment 1.000, grounded throughout |
 | Camera-relative movement | 4 | PASS — after a 90° camera yaw change, "forward" input follows the new camera forward (alignment 1.000) and no longer follows the old heading (alignment 0.000) |
-| Acceleration | 4 | PASS — 0 → 6.00 m/s in 0.200 s (theoretical 0.200 s), monotonic, no overshoot |
-| Deceleration | 4 | PASS — 6.00 → 0 m/s in 0.133 s (theoretical 0.133 s), slid 0.35 m against a 0.40 m stopping distance, no reversal, no residual speed |
+| Acceleration | 4 | PASS — 0 → 1.25 m/s in 0.050 s (theoretical 0.042 s), monotonic, no overshoot |
+| Deceleration | 4 | PASS — 1.25 → 0 m/s in 0.033 s (theoretical 0.028 s), slid 0.01 m against a 0.02 m stopping distance, no reversal, no residual speed |
 | Rotation toward movement | 2 | PASS — heading error 0.0° at cruise speed, turn is rate limited (54° remaining 3 frames in) |
 | Gravity / falling / landing | 6 | PASS — airborne 5 m up, −14.00 m/s terminal fall for that height, touchdown after 0.62 s, impact 14.00 m/s vs 14.14 m/s theoretical, vertical velocity reset to the −2 m/s ground stick |
-| Slopes (`Ramp_West`, 13.5°) | 4 | PASS — climbed 1.20 m and descended 1.28 m, grounded throughout, ground normal sampled at 13.5° |
-| Walking off a ledge | 4 | PASS — leaves the ground at the platform edge, lands after 0.75 s with a 3.00 m/s impact, settles grounded |
+| Slopes (`Ramp_West`, 13.5°) | 4 | PASS — climbed 1.01 m and descended 1.09 m, grounded throughout, ground normal sampled at 13.5° |
+| Walking off a ledge | 4 | PASS — left the ground, landed on the lower ramp after 2.35 s at 0.67 m/s, and settled grounded within 0.12 m of slope settling |
 | Wall collision | 2 | PASS — stops 0.42 m (the capsule radius) from the monolith face and stays grounded |
 
 ## Issues found and fixed
@@ -87,8 +89,8 @@ VERIFICATION PASSED
    player "stick" to an invisible box in the middle of the arena. Each of those produced false
    failures (the player sinking through the floor, being unable to move, never landing, freezing
    mid-arena). They were corrected to mirror the CharacterController semantics listed above and to
-   only import objects that actually own a `BoxCollider`; the controller math itself needed no
-   change beyond issues 1 and 2.
+   only import objects that actually own a `BoxCollider`; the controller's movement math remained
+   unchanged. Its authored maximum speed is now set to the walk-cycle reference pace.
 
 ## Not verified here
 
@@ -97,8 +99,10 @@ VERIFICATION PASSED
   for the `IsNormalized` assertion, so running the suite in the Editor confirms the fix there.
 * Camera framing, smoothing and obstacle push-in while the player moves (covered by
   `CameraSystemTest` and by eye in Play Mode).
-* Animation, audio and VFX hooks — the controller only exposes the state properties
-  (`Speed`, `VerticalSpeed`, `IsGrounded`, `JustLanded`, `SlopeAngle`, …) those systems need.
+* The real Unity Play Mode suite and the rendered Hero_Walk pose/IK could not be executed in this
+  environment. `PlayerControllerTest` now covers forward, backward, left, right and diagonal Walk
+  entry, speed-to-cycle synchronization, torso stability, opposite arm swing, grounded foot contacts
+  and planted-ankle error; open the project in Unity 6 to confirm the Avatar's IK solve visually.
 
 ## Known limitation (not a controller bug)
 

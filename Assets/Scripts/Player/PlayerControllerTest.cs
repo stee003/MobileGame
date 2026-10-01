@@ -95,10 +95,13 @@ namespace MobileGame.Player
             yield return RunTest("Static wiring & configuration", StaticChecks());
             yield return RunTest("Grounded at spawn", TestGroundedAtSpawn());
             yield return RunTest("Idle motion integrity (no zero-length Move)", TestIdleMotionIntegrity());
-            yield return RunTest("Forward movement", TestDirectionalMovement("Forward", Vector3.forward));
-            yield return RunTest("Backward movement", TestDirectionalMovement("Backward", Vector3.back));
-            yield return RunTest("Right movement", TestDirectionalMovement("Right", Vector3.right));
-            yield return RunTest("Left movement", TestDirectionalMovement("Left", Vector3.left));
+            yield return WaitForHeroRigVerification();
+            yield return RunTest("Forward movement + walk animation", TestDirectionalMovement("Forward", Vector3.forward));
+            yield return RunTest("Backward movement + walk animation", TestDirectionalMovement("Backward", Vector3.back));
+            yield return RunTest("Right movement + walk animation", TestDirectionalMovement("Right", Vector3.right));
+            yield return RunTest("Left movement + walk animation", TestDirectionalMovement("Left", Vector3.left));
+            yield return RunTest("Diagonal movement + walk animation", TestDirectionalMovement(
+                "Diagonal", new Vector3(1f, 0f, 1f).normalized));
             yield return RunTest("Camera-relative movement", TestCameraRelativeMovement());
             yield return RunTest("Acceleration", TestAcceleration());
             yield return RunTest("Deceleration", TestDeceleration());
@@ -172,17 +175,17 @@ namespace MobileGame.Player
             }
             bool visiblyAlive = chest != null && observedChestMotion > 0.05f;
 
-            // Use the same mobile-input seam as gameplay. The controller must leave idle only once
-            // planar speed is real, then return after deceleration settles to a grounded standstill.
+            // Use the same mobile-input seam as gameplay. The controller must blend from idle into
+            // the grounded walk cycle once planar speed is real, then return after stopping.
             Drive(Vector2.up);
             float elapsed = 0f;
             while (elapsed < 1.5f &&
-                   !(player.Speed > 0.08f && animator.GetCurrentAnimatorStateInfo(0).IsName("Moving")))
+                   !(player.Speed > 0.08f && IsAnimatorInWalkState(animator)))
             {
                 yield return null;
                 elapsed += Time.deltaTime;
             }
-            bool leftIdle = player.Speed > 0.08f && animator.GetCurrentAnimatorStateInfo(0).IsName("Moving");
+            bool leftIdle = player.Speed > 0.08f && IsAnimatorInWalkState(animator);
 
             ReleaseInput();
             elapsed = 0f;
@@ -210,7 +213,7 @@ namespace MobileGame.Player
             Teleport(new Vector3(0f, 1f, 8f), 180f);
             ReleaseInput();
             Debug.Log("[PlayerTest] Idle animation PASSED: grounded stillness entered a moving idle pose, " +
-                      "movement exited to the neutral state, and stopping returned to idle.");
+                      "movement blended into Walk, and stopping returned smoothly to Idle.");
             result.Passed = true;
             yield return result;
         }
@@ -379,19 +382,61 @@ namespace MobileGame.Player
         private IEnumerator TestDirectionalMovement(string label, Vector3 worldDirection)
         {
             TestResult result = new TestResult();
+            bool passed = true;
             const float duration = 0.6f;
 
             Teleport(new Vector3(0f, 1f, 8f), 180f);
-            yield return WaitFrames(8);
+            yield return WaitFrames(18);
+
+            HeroRig rig = player.GetComponent<HeroRig>();
+            Animator animator = rig != null ? rig.Animator : null;
+            HeroWalkFootPlanting footPlanting = rig != null && rig.RigRoot != null
+                ? rig.RigRoot.GetComponent<HeroWalkFootPlanting>()
+                : null;
+            if (animator == null || footPlanting == null)
+            {
+                Debug.LogError($"[PlayerTest] {label} walk FAILED: the hero Animator or foot-planting driver is missing.");
+                yield return result;
+                yield break;
+            }
+
+            footPlanting.ResetDiagnostics();
+            Transform chest = rig.GetBone(HeroJoint.Chest);
+            Transform leftUpperArm = rig.GetBone(HeroJoint.LeftUpperArm);
+            Transform rightUpperArm = rig.GetBone(HeroJoint.RightUpperArm);
+            Quaternion chestRest = rig.GetRestLocalRotation(HeroJoint.Chest);
+            Quaternion leftArmRest = rig.GetRestLocalRotation(HeroJoint.LeftUpperArm);
+            Quaternion rightArmRest = rig.GetRestLocalRotation(HeroJoint.RightUpperArm);
+            float maxChestRotation = 0f;
+            float maxLeftArmSwing = 0f;
+            float maxRightArmSwing = 0f;
 
             Vector3 start = player.transform.position;
             Vector3 expected = worldDirection.normalized;
             Drive(InputForWorldDirection(expected));
 
-            yield return WaitSeconds(duration);
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                yield return null;
+                elapsed += Time.deltaTime;
+                if (chest != null)
+                    maxChestRotation = Mathf.Max(maxChestRotation, Quaternion.Angle(chestRest, chest.localRotation));
+                if (leftUpperArm != null)
+                    maxLeftArmSwing = Mathf.Max(maxLeftArmSwing, Quaternion.Angle(leftArmRest, leftUpperArm.localRotation));
+                if (rightUpperArm != null)
+                    maxRightArmSwing = Mathf.Max(maxRightArmSwing, Quaternion.Angle(rightArmRest, rightUpperArm.localRotation));
+            }
 
             Vector3 end = player.transform.position;
             Vector3 displacement = end - start;
+            float speedWhileMoving = player.Speed;
+            bool enteredWalk = IsAnimatorInWalkState(animator);
+            float actualCycleRate = animator.GetFloat(ThirdPersonPlayerController.WalkCycleRateAnimatorParameter);
+            float expectedCycleRate = speedWhileMoving / ThirdPersonPlayerController.WalkCycleReferenceSpeed;
+            float maxPlantError = footPlanting.MaxGroundedPlantError;
+            int leftContacts = footPlanting.LeftGroundContactCount;
+            int rightContacts = footPlanting.RightGroundContactCount;
             ReleaseInput();
 
             Vector3 planar = new Vector3(displacement.x, 0f, displacement.z);
@@ -402,12 +447,50 @@ namespace MobileGame.Player
             if (planarDistance < expectedDistance * 0.6f)
             {
                 Debug.LogError($"[PlayerTest] {label} movement FAILED: travelled {planarDistance:F2}m, expected about {expectedDistance:F2}m toward {expected}.");
+                passed = false;
                 yield return result;
             }
 
             if (alignment < 0.95f)
             {
                 Debug.LogError($"[PlayerTest] {label} movement FAILED: movement direction does not match {expected} (alignment={alignment:F3}).");
+                passed = false;
+                yield return result;
+            }
+
+            if (!enteredWalk)
+            {
+                Debug.LogError($"[PlayerTest] {label} walk FAILED: grounded movement did not enter the Walk state.");
+                passed = false;
+                yield return result;
+            }
+
+            if (Mathf.Abs(actualCycleRate - expectedCycleRate) > Mathf.Max(0.08f, expectedCycleRate * 0.12f))
+            {
+                Debug.LogError($"[PlayerTest] {label} walk FAILED: cycle rate {actualCycleRate:F2} does not follow speed {speedWhileMoving:F2} m/s.");
+                passed = false;
+                yield return result;
+            }
+
+            if (maxChestRotation > 6f)
+            {
+                Debug.LogError($"[PlayerTest] {label} walk FAILED: torso/chest rotated {maxChestRotation:F1} deg from its stable rest pose (limit 6 deg).");
+                passed = false;
+                yield return result;
+            }
+
+            if (maxLeftArmSwing < 8f || maxRightArmSwing < 8f)
+            {
+                Debug.LogError($"[PlayerTest] {label} walk FAILED: arm counter-swing was too small (L/R={maxLeftArmSwing:F1}/{maxRightArmSwing:F1} deg).");
+                passed = false;
+                yield return result;
+            }
+
+            if (leftContacts == 0 || rightContacts == 0 || maxPlantError > 0.06f)
+            {
+                Debug.LogError($"[PlayerTest] {label} walk FAILED: foot planting contacts L/R={leftContacts}/{rightContacts}, " +
+                               $"maximum planted-foot error={maxPlantError:F3}m (limit 0.060m).");
+                passed = false;
                 yield return result;
             }
 
@@ -416,12 +499,22 @@ namespace MobileGame.Player
             if (!player.IsGrounded)
             {
                 Debug.LogError($"[PlayerTest] {label} movement FAILED: player left the ground while walking on flat ground.");
+                passed = false;
                 yield return result;
             }
 
-            Debug.Log($"[PlayerTest] {label} movement PASSED: {planarDistance:F2}m in {duration:F2}s (expected ~{expectedDistance:F2}m), " +
-                      $"alignment={alignment:F3}, speed={player.Speed:F2} m/s, grounded.");
-            result.Passed = true;
+            if (passed)
+            {
+                Debug.Log($"[PlayerTest] {label} movement + walk PASSED: {planarDistance:F2}m in {duration:F2}s, " +
+                          $"alignment={alignment:F3}, Walk cycle={actualCycleRate:F2}x, torso={maxChestRotation:F1} deg, " +
+                          $"arm swing L/R={maxLeftArmSwing:F1}/{maxRightArmSwing:F1} deg, planted-foot error={maxPlantError:F3}m, grounded.");
+            }
+            else
+            {
+                Debug.LogError($"[PlayerTest] {label} movement + walk FAILED; see the diagnostics above.");
+            }
+
+            result.Passed = passed;
             yield return result;
         }
 
@@ -772,7 +865,7 @@ namespace MobileGame.Player
 
             float startY = player.transform.position.y;
             Drive(InputForWorldDirection(Vector3.left)); // west, up the ramp
-            yield return WaitSeconds(1.2f);
+            yield return WaitSeconds(4.2f);
             ReleaseInput();
 
             float climbed = player.transform.position.y - startY;
@@ -798,7 +891,7 @@ namespace MobileGame.Player
             // Walk back down and make sure the player descends without launching into the air.
             float descentStartY = player.transform.position.y;
             Drive(InputForWorldDirection(Vector3.right)); // east, down the ramp
-            yield return WaitSeconds(1.4f);
+            yield return WaitSeconds(4.2f);
             ReleaseInput();
 
             float descended = descentStartY - player.transform.position.y;
@@ -906,7 +999,7 @@ namespace MobileGame.Player
             yield return WaitFrames(10);
 
             Drive(InputForWorldDirection(Vector3.right));
-            yield return WaitSeconds(4f);
+            yield return WaitSeconds(5f);
             ReleaseInput();
 
             float x = player.transform.position.x;
@@ -998,6 +1091,20 @@ namespace MobileGame.Player
             }
         }
 
+        private IEnumerator WaitForHeroRigVerification()
+        {
+            HeroRigTest rigTest = FindFirstObjectByType<HeroRigTest>();
+            float elapsed = 0f;
+            while (rigTest != null && rigTest.IsRunning && elapsed < 20f)
+            {
+                yield return null;
+                elapsed += Time.deltaTime;
+            }
+
+            if (rigTest != null && rigTest.IsRunning)
+                Debug.LogWarning("[PlayerTest] HeroRigTest did not finish within 20 seconds; continuing movement/animation checks.");
+        }
+
         private IEnumerator WaitFrames(int frames)
         {
             for (int i = 0; i < frames; i++)
@@ -1014,6 +1121,17 @@ namespace MobileGame.Player
                 yield return null;
                 elapsed += Time.deltaTime;
             }
+        }
+
+        private static bool IsAnimatorInWalkState(Animator animator)
+        {
+            if (animator == null || !animator.isInitialized || animator.layerCount == 0)
+                return false;
+
+            if (animator.GetCurrentAnimatorStateInfo(0).IsName("Walk"))
+                return true;
+
+            return animator.IsInTransition(0) && animator.GetNextAnimatorStateInfo(0).IsName("Walk");
         }
 
         /// <summary>Distance covered from rest in the given time under the configured acceleration.</summary>

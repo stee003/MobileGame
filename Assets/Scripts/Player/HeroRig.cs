@@ -143,8 +143,9 @@ namespace MobileGame.Player
     /// avatar built from a true T-pose: the arms are rotated out to the sides before
     /// <c>AvatarBuilder.BuildHumanAvatar</c> runs and returned to the resting pose straight
     /// afterwards, so the avatar's bind pose is a valid T-pose while the hero still stands relaxed.
-    /// Its controller contains only the looping idle clip and a neutral movement state; no walk or
-    /// combat clips are included.</para>
+    /// Its controller contains the looping idle and in-place walk clips only. Walk cadence is driven
+    /// by planar speed, foot IK holds each planted shoe in world space, and root motion stays off so
+    /// the CharacterController remains authoritative. No running or combat clips are included.</para>
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(HeroCharacterVisual))]
@@ -171,7 +172,7 @@ namespace MobileGame.Player
         [SerializeField] private bool logBuildReport = true;
 
         [Header("Animation")]
-        [Tooltip("Optional Animator Controller override. If empty, Hero_Idle is loaded from Resources.")]
+        [Tooltip("Optional Animator Controller override. If empty, the Hero_Idle/Hero_Walk controller is loaded from Resources.")]
         [SerializeField] private RuntimeAnimatorController animatorController;
 
         [Tooltip("Must stay false - the CharacterController owns the root motion of this hero.")]
@@ -256,10 +257,10 @@ namespace MobileGame.Player
             // Resources lookup once the runtime lifecycle begins.
             if (m_animator != null && m_animator.runtimeAnimatorController == null && animatorController == null)
             {
-                RuntimeAnimatorController idleController =
+                RuntimeAnimatorController locomotionController =
                     Resources.Load<RuntimeAnimatorController>("Animations/HeroIdle/Hero_Idle");
-                if (idleController != null)
-                    m_animator.runtimeAnimatorController = idleController;
+                if (locomotionController != null)
+                    m_animator.runtimeAnimatorController = locomotionController;
             }
         }
 
@@ -792,6 +793,17 @@ namespace MobileGame.Player
             return null;
         }
 
+        private void EnsureFootPlantingDriver()
+        {
+            if (m_rigRoot == null || m_animator == null)
+                return;
+
+            // The driver lives beside the Animator because Unity delivers OnAnimatorIK callbacks to
+            // that GameObject. It only pins feet during the Walk state's grounded stance phases.
+            if (m_rigRoot.GetComponent<HeroWalkFootPlanting>() == null)
+                m_rigRoot.gameObject.AddComponent<HeroWalkFootPlanting>();
+        }
+
         private void ConfigureAnimator()
         {
             m_animator = m_rigRoot.GetComponent<Animator>();
@@ -812,10 +824,13 @@ namespace MobileGame.Player
 
             m_animator.runtimeAnimatorController = controller;
             m_animator.logWarnings = true;
+
+            EnsureFootPlantingDriver();
+
             if (controller == null)
             {
-                Debug.LogWarning("[HeroRig] Hero idle controller was not found at " +
-                                 "Resources/Animations/HeroIdle/Hero_Idle. Run the Hero Idle asset builder " +
+                Debug.LogWarning("[HeroRig] Hero locomotion controller was not found at " +
+                                 "Resources/Animations/HeroIdle/Hero_Idle. Run the Hero Walk asset builder " +
                                  "in the Editor before entering Play Mode.", this);
             }
         }
@@ -874,6 +889,7 @@ namespace MobileGame.Player
             m_avatarKindUsed = m_avatar == null
                 ? HeroRigAvatarKind.None
                 : (m_avatar.isHuman ? HeroRigAvatarKind.Humanoid : HeroRigAvatarKind.Generic);
+            EnsureFootPlantingDriver();
             m_built = true;
             m_report = "[HeroRig] adopted the existing '" + RigRootName + "' hierarchy: " + m_bones.Count +
                        " bones, " + m_parts.Count + " meshes, avatar " + m_avatarKindUsed;

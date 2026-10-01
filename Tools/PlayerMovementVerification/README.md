@@ -1,6 +1,8 @@
 # Player movement verification tools
 
-Headless tooling for `Assets/Scripts/Player/ThirdPersonPlayerController.cs`.
+Headless tooling for `Assets/Scripts/Player/ThirdPersonPlayerController.cs`. The default maximum
+speed is now the Hero_Walk reference pace (1.25 m/s); acceleration, turning, camera-relative input
+and the rest of the movement mechanics are unchanged.
 
 * `simulate_player_movement.py` — mirrors the controller's `Update()` loop statement by statement,
   together with the `CharacterController` behaviour it depends on (skin-width collision volume,
