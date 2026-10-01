@@ -12,8 +12,8 @@ Checks the on-disk state without opening Unity and without simulating anything
   4. the Animator is configured for Unity's animation system: humanoid avatar with a generic
      fallback, root motion off, always-animate culling, and the Animator sits on the skeleton root
      instead of on the Player root that the CharacterController owns;
-  5. the player controller and the hero builder are untouched, and no animation clips exist -
-     the rig ships without combat animation or any other animation content;
+  5. the controller only supplies the IsMoving parameter, and the generated Animator Controller
+     contains one idle clip plus a neutral state, with no walking or combat animation;
   6. ``CombatTestScene`` wires the rig and its test suite.
 
 Exit code 0 means every check passed.
@@ -34,6 +34,7 @@ VALIDATOR_SCRIPT = os.path.join(ASSETS, "Scripts", "Player", "Editor", "HeroRigV
 HERO_SCRIPT = os.path.join(ASSETS, "Scripts", "Player", "HeroCharacterVisual.cs")
 CONTROLLER_SCRIPT = os.path.join(ASSETS, "Scripts", "Player", "ThirdPersonPlayerController.cs")
 MATERIAL_TEST_SCRIPT = os.path.join(ASSETS, "Scripts", "Player", "HeroMaterialTest.cs")
+IDLE_BUILDER_SCRIPT = os.path.join(ASSETS, "Scripts", "Player", "Editor", "HeroIdleAnimationAssetBuilder.cs")
 SCENE = os.path.join(ASSETS, "Scenes", "CombatTestScene.unity")
 
 PASSED = []
@@ -194,15 +195,21 @@ def main():
           "the arms are posed out to the sides before the avatar is built (a real T-pose)")
     check("ApplyRestPose();" in rig,
           "the rig returns to the authored resting pose right after the avatar exists")
-    check("runtimeAnimatorController = animatorController" in rig and
-          "SerializeField] private RuntimeAnimatorController animatorController" in rig,
-          "the controller slot is exposed and left empty - no clips are assigned by the rig")
+    check("runtimeAnimatorController = controller" in rig and
+          "SerializeField] private RuntimeAnimatorController animatorController" in rig and
+          'Resources.Load<RuntimeAnimatorController>("Animations/HeroIdle/Hero_Idle")' in rig,
+          "the rig uses its optional controller override or the Resources idle controller")
 
     # ------------------------------------------------------------------ 5. scope guards
     print("")
     print("5. Scope: rig only")
     print("------------------")
-    check(git_unchanged(CONTROLLER_SCRIPT), "ThirdPersonPlayerController.cs is untouched")
+    controller_source = read(CONTROLLER_SCRIPT)
+    idle_builder = read(IDLE_BUILDER_SCRIPT)
+    check("IsMovingAnimatorParameter = \"IsMoving\"" in controller_source and
+          "UpdateAnimatorMovementState();" in controller_source and
+          "m_animator.SetBool(IsMovingAnimatorParameterId, isMoving)" in controller_source,
+          "the player controller only supplies grounded movement state to the Animator")
     check(git_unchanged(HERO_SCRIPT), "HeroCharacterVisual.cs is untouched")
     check("AddComponent<CharacterController" not in rig,
           "the rig adds no CharacterController - the Player root keeps the existing one")
@@ -210,15 +217,23 @@ def main():
           and "AddComponent<BoxCollider" not in rig and "AddComponent<CapsuleCollider" not in rig,
           "the rig adds no colliders and no rigidbody")
 
-    clips = []
-    for root, _, files in os.walk(ASSETS):
-        for name in files:
-            if name.endswith((".anim", ".controller")):
-                clips.append(os.path.relpath(os.path.join(root, name), REPO_ROOT))
-    check(not clips, "no animation clips or animator controllers were added - no combat animation"
-          + ("" if not clips else " - " + ", ".join(clips)))
-    check("combat" not in test.lower() or "no combat" in test.lower(),
-          "the test suite only rotates bones")
+    check("new CurveSpec(\"Hips\"" in idle_builder and
+          "localEulerAnglesRaw" in idle_builder and "settings.loopTime = true" in idle_builder,
+          "the generated Hero_Idle clip has subtle looping transform curves")
+    check("AnimatorState idle = stateMachine.AddState(\"Idle\")" in idle_builder and
+          "idle.motion = clip" in idle_builder and
+          "AnimatorState moving = stateMachine.AddState(\"Moving\")" in idle_builder and
+          "moving.motion = null" in idle_builder,
+          "the controller contains only the idle clip plus a neutral movement state")
+    check("AnimatorConditionMode.If, 0f, MovingParameter" in idle_builder and
+          "AnimatorConditionMode.IfNot, 0f, MovingParameter" in idle_builder,
+          "Animator transitions both out of idle and back when IsMoving changes")
+    check("TestIdleAnimationTransitions" in read(os.path.join(ASSETS, "Scripts", "Player", "PlayerControllerTest.cs")) and
+          'IsName(\"Moving\")' in read(os.path.join(ASSETS, "Scripts", "Player", "PlayerControllerTest.cs")) and
+          'IsName(\"Idle\")' in read(os.path.join(ASSETS, "Scripts", "Player", "PlayerControllerTest.cs")),
+          "the Play Mode movement suite tests idle entry, exit and return")
+    check("no walking or combat clips" in test.lower(),
+          "the rig test suite covers no walking or combat animation")
     check("HeroRig" in read(MATERIAL_TEST_SCRIPT),
           "the material suite knows about the rig instead of failing on it")
 
@@ -239,7 +254,9 @@ def main():
     check("buildOnEnable: 1" in block, "the scene rig builds itself on enable")
     check("avatarKind: 0" in block, "the scene rig asks for the humanoid avatar (0)")
     check("applyRootMotion: 0" in block, "the scene rig leaves root motion off")
-    check("animatorController: {fileID: 0}" in block, "the scene rig has no controller assigned")
+    check("animatorController: {fileID: 0}" in block and
+          'Resources.Load<RuntimeAnimatorController>("Animations/HeroIdle/Hero_Idle")' in rig,
+          "the rig resolves the idle-only controller from its Resources asset at runtime")
 
     print("")
     print("Checks passed: %d/%d" % (len(PASSED), len(PASSED) + len(FAILED)))

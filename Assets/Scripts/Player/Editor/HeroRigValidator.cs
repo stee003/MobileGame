@@ -164,6 +164,27 @@ namespace MobileGame.Player.EditorTools
                 if (animator.cullingMode != AnimatorCullingMode.AlwaysAnimate)
                     problems.Add(sceneName + ": culling is " + animator.cullingMode +
                                  ", the skeleton stops updating off screen");
+
+                RuntimeAnimatorController controller = animator.runtimeAnimatorController;
+                if (controller == null)
+                {
+                    problems.Add(sceneName + ": the idle Animator Controller is missing");
+                }
+                else if (controller.animationClips.Length != 1 ||
+                         controller.animationClips[0].name != "Hero_Idle")
+                {
+                    problems.Add(sceneName + ": the Animator must contain only the Hero_Idle clip");
+                }
+
+                bool hasMovingParameter = false;
+                foreach (AnimatorControllerParameter parameter in animator.parameters)
+                {
+                    if (parameter.name == ThirdPersonPlayerController.IsMovingAnimatorParameter &&
+                        parameter.type == AnimatorControllerParameterType.Bool)
+                        hasMovingParameter = true;
+                }
+                if (!hasMovingParameter)
+                    problems.Add(sceneName + ": the Animator is missing its IsMoving bool parameter");
             }
 
             if (rig.GetComponent<CharacterController>() == null)
